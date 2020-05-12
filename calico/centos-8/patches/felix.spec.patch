@@ -1,0 +1,89 @@
+--- a/felix.spec	2020-05-07 21:09:15.000000000 +0000
++++ b/felix.spec	2020-05-12 16:42:29.801030371 +0000
+@@ -1,4 +1,5 @@
+ %{!?python_sitelib: %define python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print get_python_lib()")}
++%undefine _debugsource_packages
+ 
+ Name:           felix
+ Summary:        Project Calico virtual networking for cloud data centers
+@@ -11,6 +12,7 @@
+ Source1:        calico-felix.logrotate
+ Source35:       calico-felix.init
+ Source45:       calico-felix.service
++Patch0:         felix-3.14.0-bird-template-ipv4.patch
+ 
+ 
+ %define _unpackaged_files_terminate_build 0
+@@ -37,7 +39,7 @@
+ %package -n calico-felix
+ Group:          Applications/Engineering
+ Summary:        Project Calico virtual networking for cloud data centers
+-%if 0%{?el7}
++%if 0%{?el8}
+ Requires:       calico-common, conntrack-tools, ipset, iptables, iptables-utils, net-tools, iproute, which
+ %else
+ Requires:       calico-common, conntrack-tools, ipset, iptables, net-tools, iproute, which
+@@ -50,7 +52,7 @@
+ %post -n calico-felix
+ if [ $1 -eq 1 ] ; then
+     # Initial installation
+-%if 0%{?el7}
++%if 0%{?el8}
+     /usr/bin/systemctl daemon-reload
+     /usr/bin/systemctl enable calico-felix
+     /usr/bin/systemctl start calico-felix
+@@ -63,7 +65,7 @@
+ %preun -n calico-felix
+ if [ $1 -eq 0 ] ; then
+     # Package removal, not upgrade
+-%if 0%{?el7}
++%if 0%{?el8}
+     /usr/bin/systemctl disable calico-felix
+     /usr/bin/systemctl stop calico-felix
+ %else
+@@ -75,7 +77,7 @@
+ %postun -n calico-felix
+ if [ $1 -ge 1 ] ; then
+     # Package upgrade, not uninstall
+-%if 0%{?el7}
++%if 0%{?el8}
+     /usr/bin/systemctl condrestart calico-felix >/dev/null 2>&1 || :
+ %else
+     /etc/init.d/calico-felix condrestart >/dev/null 2>&1 || :
+@@ -84,6 +86,7 @@
+ 
+ %prep
+ %setup -q
++%patch0 -p1
+ 
+ %build
+ 
+@@ -99,7 +102,7 @@
+ # Setup directories
+ install -d -m 755 %{buildroot}%{_datadir}/calico
+ install -d -m 755 %{buildroot}%{_sysconfdir}
+-%if 0%{?el7}
++%if 0%{?el8}
+     install -d -m 755 %{buildroot}%{_unitdir}
+ %else
+     install -d -m 755 %{buildroot}%{_sysconfdir}/init.d
+@@ -110,8 +113,8 @@
+     install -p -m 755 %{SOURCE35} %{buildroot}%{_sysconfdir}/init.d/calico-felix
+ %endif
+ 
+-# For EL7, install systemd service files
+-%if 0%{?el7}
++# For el8, install systemd service files
++%if 0%{?el8}
+     install -p -D -m 755 %{SOURCE45} %{buildroot}%{_unitdir}/calico-felix.service
+ %endif
+ 
+@@ -146,7 +149,7 @@
+ /usr/bin/calico-felix
+ /usr/lib/calico/bpf/*
+ /etc/calico/felix.cfg.example
+-%if 0%{?el7}
++%if 0%{?el8}
+     %{_unitdir}/calico-felix.service
+ %else
+     %{_sysconfdir}/init.d/calico-felix

@@ -1,0 +1,89 @@
+--- a/python-etcd3gw.spec	2020-03-25 22:02:17.000000000 +0000
++++ b/python-etcd3gw.spec	2020-05-12 15:10:20.563348302 +0000
+@@ -1,7 +1,7 @@
+ %global pypi_name etcd3gw
+ %global srcname etcd3gw
+ 
+-%if 0%{?fedora}
++%if 1%{?fedora}
+ %global with_python3 1
+ %endif
+ 
+@@ -23,24 +23,24 @@
+ Summary:        A python client for etcd3 grpc-gateway
+ %{?python_provide:%python_provide python2-%{pypi_name}}
+ 
+-BuildRequires:       python-chardet
++BuildRequires:       python2-chardet
+ BuildRequires:       python2-devel
+ BuildRequires:       python2-pbr
+-BuildRequires:       python-setuptools
+-BuildRequires:       python-urllib3
++BuildRequires:       python2-setuptools
++BuildRequires:       python2-urllib3
+ 
+-Requires:       python-chardet
++Requires:       python2-chardet
+ Requires:       python2-devel
+-Requires:       python2-certifi
+-Requires:       python2-futures
+-Requires:       python2-futurist
++Requires:       python3-certifi
++Requires:       python-requests-futures
++Requires:       python3-futurist
+ Requires:       python2-idna
+-Requires:       python-monotonic
++Requires:       python3-monotonic
+ Requires:       python2-pbr
+ Requires:       python2-requests
+ Requires:       python2-six
+-Requires:       python-setuptools
+-Requires:       python-urllib3
++Requires:       python2-setuptools
++Requires:       python2-urllib3
+ 
+ %description -n python2-%{pypi_name}
+ A python client for etcd3 grpc-gateway
+@@ -50,8 +50,7 @@
+ %license LICENSE
+ %doc README.md CONTRIBUTING.rst HACKING.rst
+ %defattr(-,root,root,-)
+-%{python_sitelib}/%{pypi_name}*
+-
++%{python2_sitelib}/%{pypi_name}*
+ 
+ %if 0%{?with_python3}
+ %package -n python3-%{pypi_name}
+@@ -61,6 +60,7 @@
+ BuildRequires:       python3-devel
+ BuildRequires:       python3-urllib3
+ BuildRequires:       python3-six
++BuildRequires:       python3-pbr
+ BuildRequires:       python3-setuptools
+ 
+ Requires:    python3-idna
+@@ -70,10 +70,17 @@
+ A python client for etcd3 grpc-gateway. You'll need one of the
+ centos-release-openstack-<version> package to install python dependencies.
+ 
++%files -n python3-%{pypi_name}
++%license LICENSE
++%doc README.md CONTRIBUTING.rst HACKING.rst
++%defattr(-,root,root,-)
++%{python3_sitelib}/%{pypi_name}*
++
+ %endif
+ 
+ %prep
+ %autosetup -n %{pypi_name}-%{version}
++echo -e "Name: %{pypi_name}\nVersion: %{version}\n" > PKG-INFO
+ 
+ %build
+ %py2_build
+@@ -84,3 +91,6 @@
+ 
+ %install
+ %py2_install
++%if 0%{?with_python3}
++%py3_install
++%endif

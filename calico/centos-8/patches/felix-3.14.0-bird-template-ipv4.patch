@@ -1,0 +1,36 @@
+--- a/etc/bird/calico-bird.conf.template	2020-05-07 21:07:27.000000000 +0000
++++ b/etc/bird/calico-bird.conf.template	2020-05-12 15:04:16.932330320 +0000
+@@ -26,9 +26,11 @@ protocol kernel {
+   learn;          # Learn all alien routes from the kernel
+   persist;        # Don't remove routes on bird shutdown
+   scan time 2;    # Scan kernel routing table every 2 seconds
+-  import all;
+   graceful restart;
+-  export all;     # Default is export none
++  ipv4 {
++    import all;
++    export all;     # Default is export none
++  };
+ }
+ 
+ # Watch interface up/down events.
+--- a/etc/bird/calico-bird-peer.conf.template	2020-05-07 21:07:27.000000000 +0000
++++ b/etc/bird/calico-bird-peer.conf.template	2020-05-12 15:04:16.933330339 +0000
+@@ -4,11 +4,12 @@ protocol bgp '@ID@' {
+   description "@DESCRIPTION@";
+   local as @AS_NUMBER@;
+   neighbor @PEER_IP_ADDRESS@ as @AS_NUMBER@;
++  source address @MY_IP_ADDRESS@;
+   multihop;
+-  import all;
+   graceful restart;
+-  export filter export_bgp;
+-  next hop self;    # Disable next hop processing and always advertise our
+-                    # local address as nexthop
+-  source address @MY_IP_ADDRESS@;  # The local address we use for the TCP connection
++  ipv4 {
++    import all;
++    export filter export_bgp;
++    next hop self;
++  };
+ }

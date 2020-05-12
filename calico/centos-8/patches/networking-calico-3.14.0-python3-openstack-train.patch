@@ -1,0 +1,278 @@
+--- a/networking_calico/agent/dhcp_agent.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/agent/dhcp_agent.py	2020-05-11 11:03:33.768464618 +0000
+@@ -370,7 +370,7 @@ class CalicoEtcdWatcher(etcdutils.EtcdWa
+             # otherwise we would have already found it when searching by
+             # subnet_id above.)
+             assert new_subnets
+-            network_id = new_subnets.values()[0]['network_id']
++            network_id = list(new_subnets.values())[0]['network_id']
+             net = self.agent.cache.get_network_by_id(network_id)
+             LOG.debug("Existing network model by network ID: %s", net)
+ 
+@@ -391,7 +391,7 @@ class CalicoEtcdWatcher(etcdutils.EtcdWa
+             # Add the new subnets into the NetModel.
+             assert net
+             net.subnets = [s for s in net.subnets
+-                           if s.id not in new_subnets] + new_subnets.values()
++                           if s.id not in new_subnets] + list(new_subnets.values())
+ 
+             # Add (or update) the NetModel in the cache.
+             LOG.debug("Net: %s", net)
+@@ -560,7 +560,7 @@ class SubnetWatcher(etcdutils.EtcdWatche
+ 
+     def get_subnet_id_for_addr(self, ip_str, network_id):
+         ip_addr = netaddr.IPAddress(ip_str)
+-        for subnet_id, subnet_data in self.subnets_by_id.iteritems():
++        for subnet_id, subnet_data in self.subnets_by_id.items():
+             # If we know we're looking within a given Neutron network, only
+             # consider this subnet if it belongs to that network.
+             if network_id and subnet_data['network_id'] != network_id:
+--- a/networking_calico/common/__init__.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/common/__init__.py	2020-05-12 13:47:48.072976553 +0000
+@@ -21,6 +21,7 @@ import errno
+ import netaddr
+ import netaddr.core
+ import os
++import sys
+ 
+ 
+ def validate_cidr(cidr, version):
+@@ -41,7 +42,7 @@ def validate_cidr(cidr, version):
+ def canonicalise_cidr(cidr, version):
+     assert cidr is not None
+     nw = netaddr.IPNetwork(cidr, version=version)
+-    return intern(str(nw))
++    return sys.intern(str(nw))
+ 
+ 
+ def mkdir_p(path):
+--- a/networking_calico/datamodel_v1.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/datamodel_v1.py	2020-05-11 20:28:51.602361707 +0000
+@@ -21,6 +21,7 @@ Calico DHCP agent) and Felix's status-re
+ changing these, we still need to consider upgrading an existing
+ Calico/OpenStack deployment.
+ """
++import sys
+ 
+ # Key used for leader election by Neutron mechanism drivers.
+ NEUTRON_ELECTION_KEY = "/calico/openstack/v1/neutron_election"
+@@ -41,8 +42,8 @@ class EndpointId(object):
+         # We intern these strings since they can occur in many IDs.  The
+         # host and orchestrator are trivially repeated for all endpoints
+         # on a host.  The others get repeated over time.
+-        self.host = intern(host.encode("utf8"))
+-        self.endpoint = intern(endpoint.encode("utf8"))
++        self.host = sys.intern(host)
++        self.endpoint = sys.intern(endpoint)
+ 
+     def __str__(self):
+         return self.__class__.__name__ + ("<%s>" % self.endpoint)
+@@ -63,8 +64,8 @@ class WloadEndpointId(EndpointId):
+         # host and orchestrator are trivially repeated for all endpoints
+         # on a host.  The others get repeated over time.
+         super(WloadEndpointId, self).__init__(host, endpoint)
+-        self.orchestrator = intern(orchestrator.encode("utf8"))
+-        self.workload = intern(workload.encode("utf8"))
++        self.orchestrator = sys.intern(orchestrator)
++        self.workload = sys.intern(workload)
+ 
+     def __repr__(self):
+         return self.__class__.__name__ + ("(%r,%r,%r,%r)" % (self.host,
+--- a/networking_calico/datamodel_v2.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/datamodel_v2.py	2020-05-11 14:34:08.795963382 +0000
+@@ -63,7 +63,7 @@ def get_endpoint_id_from_key(region_stri
+             r'(?P<orchestrator>[^/]+)/'
+             r'(?P<workload_id>[^/]+)/'
+             r'endpoint/(?P<endpoint_id>[^/]+)')
+-    m = _cached_endpoint_key_re.match(key)
++    m = _cached_endpoint_key_re.match(key.decode('utf8'))
+     if m:
+         # Got an endpoint.
+         host = m.group("hostname")
+--- a/networking_calico/datamodel_v3.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/datamodel_v3.py	2020-05-12 13:25:48.272873841 +0000
+@@ -180,7 +180,7 @@ def get_all(resource_kind, namespace,
+     tuples = []
+     for result in results:
+         key, value, mod_revision = result
+-        name = key.split('/')[-1]
++        name = key.decode('utf8').split('/')[-1]
+ 
+         # Decode the value.
+         spec = labels = annotations = None
+--- a/networking_calico/etcdutils.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/etcdutils.py	2020-05-11 11:03:33.846466083 +0000
+@@ -17,6 +17,7 @@ import eventlet
+ import functools
+ import json
+ import re
++import sys
+ 
+ from etcd3gw.exceptions import ConnectionFailedError
+ from networking_calico.compat import log
+@@ -79,7 +80,7 @@ class PathDispatcher(object):
+         :param Response: A python-etcd response object for a watch.
+         """
+         LOG.debug("etcd event %s for key %s", response.action, response.key)
+-        key_parts = response.key.strip("/").split("/")
++        key_parts = response.key.decode('utf8').strip("/").split("/")
+         self._handle(key_parts, response, self.handler_root, {})
+ 
+     def _handle(self, key_parts, response, handler_node, captures):
+@@ -395,13 +396,13 @@ def intern_dict(d, fields_to_intern=None
+     """
+     fields_to_intern = fields_to_intern or set()
+     out = {}
+-    for k, v in d.iteritems():
++    for k, v in d.items():
+         # We can't intern unicode strings, as returned by etcd but all our
+         # keys should be ASCII anyway.  Use the utf8 encoding just in case.
+-        k = intern(k.encode("utf8"))
++        k = sys.intern(k)
+         if k in fields_to_intern:
+             if _is_string_instance(v):
+-                v = intern(v.encode("utf8"))
++                v = sys.intern(v)
+             elif isinstance(v, list):
+                 v = intern_list(v)
+         out[k] = v
+@@ -419,7 +420,7 @@ def intern_list(l):
+     out = []
+     for item in l:
+         if _is_string_instance(item):
+-            item = intern(item.encode("utf8"))
++            item = sys.intern(item)
+         out.append(item)
+     return out
+ 
+@@ -451,7 +452,7 @@ json_decoder = json.JSONDecoder(
+ 
+ def safe_decode_json(raw_json, log_tag=None):
+     try:
+-        return json_decoder.decode(raw_json)
++        return json_decoder.decode(raw_json.decode('utf8'))
+     except (TypeError, ValueError):
+         LOG.warning("Failed to decode JSON for %s: %r.  Returning None.",
+                     log_tag, raw_json)
+--- a/networking_calico/plugins/ml2/drivers/calico/election.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/plugins/ml2/drivers/calico/election.py	2020-05-11 11:03:33.813465463 +0000
+@@ -209,7 +209,7 @@ class Elector(object):
+         """
+         # Defensive. In case we ever change the master ID format, only parse
+         # it if it looks like what we expect.
+-        match = re.match(r"^(?P<host>[^:]+):(?P<pid>\d+)$", master_id)
++        match = re.match(rb"^(?P<host>[^:]+):(?P<pid>\d+)$", master_id)
+         if not match:
+             LOG.warning("Unable to parse master ID: %r.", master_id)
+             return
+--- a/networking_calico/plugins/ml2/drivers/calico/mech_calico.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/plugins/ml2/drivers/calico/mech_calico.py	2020-05-12 16:08:55.039461883 +0000
+@@ -30,6 +30,7 @@ import inspect
+ import os
+ import re
+ import uuid
++import sys
+ 
+ # OpenStack imports.
+ import eventlet
+@@ -444,7 +445,7 @@ class CalicoMechanismDriver(mech_agent.S
+         :param status_dict: new status dict for the port or None if the
+                status was deleted.
+         """
+-        port_status_key = (intern(hostname.encode("utf8")), port_id)
++        port_status_key = (sys.intern(hostname), port_id)
+         # Unwrap the dict around the actual status.
+         if status_dict is not None:
+             # Update.
+@@ -492,7 +493,7 @@ class CalicoMechanismDriver(mech_agent.S
+                     # of the status strings.  We know the .encode() is safe
+                     # because we just checked this was one of our expected
+                     # strings.
+-                    interned_status = intern(calico_status.encode("utf8"))
++                    interned_status = sys.intern(calico_status)
+                     self._port_status_cache[port_status_key] = interned_status
+                 else:
+                     LOG.error("Unknown port status: %r", calico_status)
+@@ -695,6 +696,14 @@ class CalicoMechanismDriver(mech_agent.S
+         LOG.info("DELETE_SUBNET_POSTCOMMIT: %s" % context)
+         self.subnet_syncer.subnet_deleted(context.current['id'])
+ 
++    @requires_state
++    def create_port_precommit(self, context):
++        LOG.info("CREATE_PORT_PRECOMMIT: %s" % context)
++
++    @requires_state
++    def update_port_precommit(self, context):
++        LOG.info("UPDATE_PORT_PRECOMMIT: %s" % context)
++
+     # Idealised method forms.
+     @requires_state
+     def create_port_postcommit(self, context):
+@@ -764,6 +773,7 @@ class CalicoMechanismDriver(mech_agent.S
+             # - an update (port bound at all times);
+             # - a change to an unbound port (which we don't care about, because
+             #   we do nothing with unbound ports).
++
+             if port_bound(port) and not port_bound(original):
+                 self._port_bound_update(context, port)
+             elif port_bound(original) and not port_bound(port):
+@@ -1011,7 +1021,7 @@ class CalicoMechanismDriver(mech_agent.S
+             # Generate a cluster GUID if there isn't one already.
+             if not cluster_info.get(datamodel_v3.CLUSTER_GUID):
+                 cluster_info[datamodel_v3.CLUSTER_GUID] = \
+-                    uuid.uuid4().get_hex()
++                    uuid.uuid4().hex
+                 rewrite_cluster_info = True
+ 
+             # Add "openstack" to the cluster type, unless there already.
+--- a/networking_calico/plugins/ml2/drivers/calico/status.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/plugins/ml2/drivers/calico/status.py	2020-05-12 13:44:43.512465735 +0000
+@@ -99,7 +99,7 @@ class StatusWatcher(etcdutils.EtcdWatche
+ 
+     def _post_snapshot_hook(self, old_endpoints_by_host):
+         # Look for previous endpoints that are no longer present...
+-        for hostname, ep_ids in old_endpoints_by_host.iteritems():
++        for hostname, ep_ids in old_endpoints_by_host.items():
+             LOG.info("host: %s", hostname)
+             # Check for particular endpoints that have disappeared, and
+             # signal those.
+--- a/networking_calico/plugins/ml2/drivers/calico/syncer.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/plugins/ml2/drivers/calico/syncer.py	2020-05-11 11:03:33.811465425 +0000
+@@ -153,7 +153,7 @@ class ResourceSyncer(object):
+ 
+         LOG.info("Resync for %s; got etcd data, look for deletions...",
+                  self.resource_kind)
+-        for name, neutron_data in neutron_map.iteritems():
++        for name, neutron_data in neutron_map.items():
+             # Skip this name if we already handled it above - i.e. if we
+             # already had data for it in etcd.
+             if name in names_compared:
+--- a/networking_calico/tests/test_etcdutils.py	2020-05-07 21:07:11.000000000 +0000
++++ b/networking_calico/tests/test_etcdutils.py	2020-05-11 11:03:33.834465858 +0000
+@@ -77,7 +77,7 @@ class _TestPathDispatcherBase(unittest.T
+         m_response.action = self.action
+         self.dispatcher.handle_event(m_response)
+         exp_handlers = self.handlers[self.expected_handlers]
+-        for handler_key, handler in exp_handlers.iteritems():
++        for handler_key, handler in exp_handlers.items():
+             assert isinstance(handler, Mock)
+             if handler_key == exp_handler:
+                 continue
+@@ -85,7 +85,7 @@ class _TestPathDispatcherBase(unittest.T
+                              "Unexpected set handler %s was called for "
+                              "key %s" % (handler_key, key))
+         unexp_handlers = self.handlers[self.unexpected_handlers]
+-        for handler_key, handler in unexp_handlers.iteritems():
++        for handler_key, handler in unexp_handlers.items():
+             assert isinstance(handler, Mock)
+             self.assertFalse(handler.called,
+                              "Unexpected del handler %s was called for "
+@@ -131,7 +131,7 @@ class _TestPathDispatcherBase(unittest.T
+         m_result.action = "unknown"
+         self.dispatcher.handle_event(m_result)
+         for handlers in self.handlers.itervalues():
+-            for key, handler in handlers.iteritems():
++            for key, handler in handlers.items():
+                 self.assertFalse(handler.called,
+                                  msg="Unexpected handler called: %s" % key)
+ 
