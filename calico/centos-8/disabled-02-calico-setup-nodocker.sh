@@ -61,6 +61,24 @@ curl -O -L  https://github.com/projectcalico/calicoctl/releases/download/v3.13.3
 install -m 755 calicoctl /usr/local/bin/
 allcp /usr/local/bin/calicoctl /usr/local/bin/calicoctl
 
+curl -LO https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz
+tar -C /usr/local -xzf go1.14.2.linux-amd64.tar.gz
+PATH=$PATH:/usr/local/go/bin
+mkdir -p /root/go/src/github.com/projectcalico
+(
+ cd /root/go/src/github.com/projectcalico
+ git clone https://github.com/projectcalico/node.git
+ cd node/cmd/calico-node
+ go build
+ install -m 755 calico-node /usr/local/bin/
+)
+compcp /usr/local/bin/calico-node /usr/local/bin/calico-node
+
+curl -o confd -L https://github.com/kelseyhightower/confd/releases/download/v0.16.0/confd-0.16.0-linux-amd64
+install -m 755 confd /usr/local/bin/
+compcp /usr/local/bin/confd /usr/local/bin/confd
+
+
 # configure
 
 sed -i "s/localhost:2379/$head_ip:2379/" /etc/etcd/etcd.conf
@@ -92,13 +110,43 @@ EOF
 
 allcp /etc/calico/calicoctl.cfg /etc/calico/calicoctl.cfg
 
+#comp 'calico-gen-bird-mesh-conf.sh $(ip -o r g 1|sed "s/.* src \([^[:blank:]]\+\).*/\1/") 65001 $(grep calico /etc/hosts |grep -v `hostname`|awk "{print \$1}")' #"
+#comp 'sed -i "s/\(protocol bgp .\)\(172.31.0.\)\(.*\)/\1cal\3/" /etc/bird.conf'
+compcp genbird.sh /usr/local/bin/
+comp genbird.sh
+
 cat > /etc/calico/calico.env << EOF
 ETCD_ENDPOINTS=http://$head_ip:2379
 IP_AUTODETECTION_METHOD='interface=eth.*'
 CALICO_NETWORKING_BACKEND=vxlan
+FELIX_IPV6SUPPORT=False
+FELIX_DEFAULTENDPOINTTOHOSTACTION=ACCEPT
 EOF
 compcp /etc/calico/calico.env /etc/calico/calico.env
 comp 'sed -i "$ a NODENAME=$(awk -F= -v h=host "\$1==h {print \$2}" /etc/nova/nova.conf)" /etc/calico/calico.env'
+
+cat > /etc/systemd/system/calico-node.service << \EOF
+[Unit]
+Description=Calico Node agent
+After=syslog.target network.target
+
+[Service]
+User=root
+EnvironmentFile=/etc/calico/calico.env
+ExecStartPre=/usr/bin/mkdir -p /var/run/calico
+ExecStartPre=/usr/local/bin/calico-node -startup
+ExecStart=/usr/local/bin/calico-node -allocate-tunnel-addrs
+KillMode=process
+Restart=on-failure
+LimitNOFILE=32000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+compcp /etc/systemd/system/calico-node.service /etc/systemd/system/calico-node.service
+comp systemctl enable calico-node
+
 
 # switch to calico
 # alias sysls="systemctl -t service --state running --no-pager --no-legend"
@@ -121,16 +169,7 @@ head '. keystonerc_admin; neutron agent-list|sed -n "s/^| \([0-9a-f-]\+\).*/\1/p
 comp systemctl enable openstack-nova-metadata-api
 comp systemctl restart openstack-nova-metadata-api
 comp systemctl restart openstack-nova-compute
+comp systemctl restart calico-felix.service
 comp systemctl restart calico-dhcp-agent.service
-
-# for ip or vxlan encap calico-node+confd+felix combo is required
-comp systemctl disable --now calico-felix.service
-comp dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
-comp dnf -y install docker-ce --nobest
-comp dnf -y install containerd.io
-comp systemctl enable --now docker
-
-comp systemctl stop calico-felix.service
-comp calicoctl node run
-comp calicoctl node status
+comp systemctl restart calico-node
 ETCDCTL_API=3 etcdctl --endpoints http://$head_ip:2379 del /calico/resources/v3/projectcalico.org/felixconfigurations/default
