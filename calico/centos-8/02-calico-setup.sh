@@ -71,16 +71,6 @@ all 'sed -i -e "/^service_plugins/ d" \
          /etc/neutron/neutron.conf'
 comp 'sed -i "s/# \(lock_path.*\)/\1/" /etc/neutron/neutron.conf'
 
-head 'mkdir -p /etc/calico'
-cat > /etc/calico/felix.cfg <<EOF
-[global]
-DatastoreType = etcdv3
-EtcdAddr = $head_ip:2379
-EOF
-compcp /etc/calico/felix.cfg /etc/calico/felix.cfg
-comp 'sed -i "$ a FelixHostname = $(awk -F= -v h=host "\$1==h {print \$2}" /etc/nova/nova.conf)" /etc/calico/felix.cfg'
-comp 'hostnamectl set-hostname $(awk -F= -v h=host "\$1==h {print \$2}" /etc/nova/nova.conf)'
-
 cat > /etc/calico/calicoctl.cfg << EOF
 apiVersion: projectcalico.org/v3
 kind: CalicoAPIConfig
@@ -91,14 +81,6 @@ spec:
 EOF
 
 allcp /etc/calico/calicoctl.cfg /etc/calico/calicoctl.cfg
-
-cat > /etc/calico/calico.env << EOF
-ETCD_ENDPOINTS=http://$head_ip:2379
-IP_AUTODETECTION_METHOD='interface=eth.*'
-CALICO_NETWORKING_BACKEND=vxlan
-EOF
-compcp /etc/calico/calico.env /etc/calico/calico.env
-comp 'sed -i "$ a NODENAME=$(awk -F= -v h=host "\$1==h {print \$2}" /etc/nova/nova.conf)" /etc/calico/calico.env'
 
 # switch to calico
 # alias sysls="systemctl -t service --state running --no-pager --no-legend"
@@ -118,9 +100,11 @@ head systemctl restart etcd
 head systemctl restart neutron-server
 head '. keystonerc_admin; neutron agent-list|sed -n "s/^| \([0-9a-f-]\+\).*/\1/p"|while read id; do neutron agent-delete $id; done'
 
-comp systemctl enable openstack-nova-metadata-api
+comp systemctl enable --now openstack-nova-metadata-api
 comp systemctl restart openstack-nova-metadata-api
+comp systemctl enable  openstack-nova-compute
 comp systemctl restart openstack-nova-compute
+comp systemctl enable  calico-dhcp-agent.service
 comp systemctl restart calico-dhcp-agent.service
 
 # for ip or vxlan encap calico-node+confd+felix combo is required
@@ -133,4 +117,53 @@ comp systemctl enable --now docker
 comp systemctl stop calico-felix.service
 comp calicoctl node run
 comp calicoctl node status
+
+# hack to restore felix functions as a neutron agent
+sleep 3
+ETCDCTL_API=3 etcdctl --endpoints http://$head_ip:2379 del /calico/resources/v3/projectcalico.org/felixconfigurations/default
+
+# allow all communications
+cat > pol.yaml <<\EOF
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: allow-all
+spec:
+  selector: all()
+  types:
+  - Ingress
+  - Egress
+  ingress:
+  - action: Allow
+  egress:
+  - action: Allow
+EOF
+calicoctl apply --filename=pol.yaml
+
+MODS="
+arptable_filter
+ebtable_broute
+ebtable_filter
+ebtable_nat
+ip6table_filter
+ip6table_mangle
+ip6table_nat
+ip6table_raw
+ip6table_security
+iptable_filter
+iptable_mangle
+iptable_nat
+iptable_raw
+iptable_security
+"
+# disable old iptables modules
+for m in $MODS; do echo blacklist $m; echo install $m /bin/false; done|sort >/etc/modprobe.d/local-blacklist.conf
+compcp /etc/modprobe.d/local-blacklist.conf /etc/modprobe.d/local-blacklist.conf
+# reboot compute hosts here
+
+# restart calico-node in nftables mode
+comp docker stop calico-node
+comp docker rm calico-node
+pdsh -w calico[1-3].local 'docker run --net=host --privileged --name=calico-node -d --restart=always -e ETCD_ENDPOINTS=http://172.31.0.48:2379 -e ETCD_DISCOVERY_SRV= -e NODENAME=%h -e FELIX_IPTABLESBACKEND=NFT -e IP_AUTODETECTION_METHOD="interface=eth.*" -v /var/log/calico:/var/log/calico -v /var/run/calico:/var/run/calico -v /var/lib/calico:/var/lib/calico -v /lib/modules:/lib/modules -v /run:/run quay.io/calico/node:latest'
+sleep 3
 ETCDCTL_API=3 etcdctl --endpoints http://$head_ip:2379 del /calico/resources/v3/projectcalico.org/felixconfigurations/default
