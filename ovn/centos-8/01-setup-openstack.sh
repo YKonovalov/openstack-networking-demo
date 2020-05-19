@@ -1,10 +1,10 @@
 #!/bin/sh
-
+cluster=ovn
 alias all='pdsh -w ovn,ovn[1-3]'
-alias head='pdsh -w ovnc'
-alias comp='pdsh -w ovnc[1-3]'
-alias allcp='pdcp -w ovn,ovnc[1-3]'
-comp_ip_list="$(echo $(grep ovnc /etc/hosts |grep -v `hostname`|awk "{print \$1}")|tr ' ' ',')"
+alias head='pdsh -w ovn'
+alias comp='pdsh -w ovn[1-3]'
+alias allcp='pdcp -w ovn,ovn[1-3]'
+comp_ip_list="$(echo $(awk -v m="$cluster.$" "\$3~m {print \$1}" /etc/hosts)|tr ' ' ',')"
 
 all dnf -y update
 all dnf -y install centos-release-openstack-train

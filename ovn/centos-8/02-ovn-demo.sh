@@ -4,6 +4,8 @@ net=ovn
 cidr=10.1.0.0/16
 gw=10.1.0.1
 
+. keystonerc_admin
+
 openstack image show cirros2 >/dev/null 2>&1 || (
   curl -OL --progress http://download.cirros-cloud.net/0.5.1/cirros-0.5.1-x86_64-disk.img
   openstack image create cirros2 --disk-format qcow2 --public --container-format bare --file cirros-0.5.1-x86_64-disk.img
