@@ -6,7 +6,7 @@ OS=train
 yum install -y python3-devel libffi-devel gcc openssl-devel python3-libselinux time
 
 cd
-mkdir -p src $virtualenv_path
+mkdir src
 
 git clone https://github.com/openstack/kayobe.git -b stable/$OS src/kayobe
 git clone https://github.com/tungstenfabric/tf-ansible-deployer.git -b master src/tf-ansible-deployer
@@ -31,9 +31,9 @@ pre_configure(){
     done
 }
 
-mkdir -p /etc/kayobe/inventory/group_vars/{seed,overcloud} /etc/kayobe/kolla /etc/kolla/config/nova
+mkdir -p /etc/kayobe/inventory/group_vars/{seed,overcloud} /etc/kayobe/kolla/config
 
-cat > /etc/kolla/config/nova/nova-compute.conf << EOF
+cat > /etc/kayobe/kolla/config/nova.conf << EOF
 [libvirt]
 virt_type=qemu
 EOF
@@ -367,18 +367,23 @@ source "\$KAYOBE_VENV_PATH/bin/activate"
 #cd "\$KAYOBE_DATA_FILES_PATH"
 EOF
 
-ktbox(){
+ktbox_in(){
   ssh kolla 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
+}
+
+ktbox(){
+  ssh -n kolla 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
 }
 
 openstackResourcesAdd(){
   alias openstack="ktbox openstack"
+  alias openstack_stdin="ktbox_in openstack"
   openstack service list
   curl -OL --progress http://download.cirros-cloud.net/0.5.1/cirros-0.5.1-x86_64-disk.img
-  cat cirros-0.5.1-x86_64-disk.img|openstack image create cirros2 --disk-format qcow2 --public --container-format bare
+  cat cirros-0.5.1-x86_64-disk.img|openstack_stdin image create cirros2 --disk-format qcow2 --public --container-format bare
   openstack flavor create --public m1.tiny --id auto --ram 1024 --disk 10
   while read net cidr; do
-    netid="$(openstack network create --share $net -c id -f value)"; [ -n "$netid" ]
+    netid="$(openstack network create --share $net -c id -f value < /dev/null)"; [ -n "$netid" ]
     openstack subnet create --network $net --ip-version 4 --subnet-range $cidr $net-v4
     for name in a b c; do
       openstack server create --flavor m1.tiny --image cirros2 --network=$netid $net-$name
@@ -390,7 +395,7 @@ EOF
 }
 
 rm -f /tmp/tlog
-alias tlog='\time -f "%E\t%C (exit code: %X)" -a -o /tmp/tlog'
+alias tlog='\time -f "%E %C (exit code: %X)" -a -o /tmp/tlog'
 time (
   source ~/kayobe.rc
   tlog kayobe control host bootstrap
