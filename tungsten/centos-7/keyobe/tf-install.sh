@@ -35,6 +35,8 @@ instances:
     roles:
       vrouter:
       openstack_compute:
+global_configuration:
+  CONTAINER_REGISTRY: tungstenfabric
 contrail_configuration:
   CLOUD_ORCHESTRATOR: openstack
   OPENSTACK_VERSION: train
@@ -50,6 +52,11 @@ kolla_config:
       virt_type=qemu
       cpu_mode=none
   kolla_globals:
+    neutron_plugin_agent: opencontrail-ml2
+    enable_opencontrail_rbac: no
+    contrail_dm_integration: True
+    neutron_type_drivers: "local,vlan,gre,vxlan"
+    neutron_tenant_network_types: "local,vlan"
     enable_aodh: no
     enable_barbican: no
     enable_blazar: no
@@ -119,14 +126,17 @@ kolla_config:
     enable_watcher: no
     enable_zun: no
 EOF
+time (
 ansible-playbook -i inventory/ playbooks/configure_instances.yml
 virtualenv venv
 . venv/bin/activate
 pip install ../contrail-kolla-ansible
 pip install ansible
-ansible-playbook -i inventory/ playbooks/install_openstack.yml
-ansible-playbook -i inventory/ playbooks/install_contrail.yml
+time ansible-playbook -i inventory/ playbooks/install_openstack.yml
+time ansible-playbook -i inventory/ playbooks/install_contrail.yml
+)
 
+exit
 scp kolla:/etc/kolla/kolla-toolbox/admin-openrc.sh ./
 . admin-openrc.sh
 openstack image show cirros >/dev/null 2>&1 || (
