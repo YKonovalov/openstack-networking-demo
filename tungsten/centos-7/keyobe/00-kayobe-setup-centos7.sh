@@ -370,14 +370,14 @@ EOF
 ktbox_in(){
   ssh kolla 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
 }
+alias openstack="ktbox openstack"
 
 ktbox(){
   ssh -n kolla 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
 }
+alias openstack_stdin="ktbox_in openstack"
 
 openstackResourcesAdd(){
-  alias openstack="ktbox openstack"
-  alias openstack_stdin="ktbox_in openstack"
   openstack service list
   curl -OL --progress http://download.cirros-cloud.net/0.5.1/cirros-0.5.1-x86_64-disk.img
   cat cirros-0.5.1-x86_64-disk.img|openstack_stdin image create cirros2 --disk-format qcow2 --public --container-format bare
@@ -404,6 +404,6 @@ time (
   source venvs/kolla-ansible/bin/activate
     tlog ansible-playbook -i /etc/kayobe/inventory -e config_file=/etc/kayobe/tf.yml src/tf-ansible-deployer/playbooks/install_contrail.yml
   deactivate
-  tlog openstackResourcesAdd
+  time openstackResourcesAdd
   cat /tmp/tlog
 )
