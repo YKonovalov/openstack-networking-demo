@@ -1,0 +1,62 @@
+#!/bin/sh -e
+if [ -z "$(which vppctl 2>/dev/null)" ]; then
+  curl -s https://packagecloud.io/install/repositories/fdio/master/script.rpm.sh | sudo bash
+  yum -y install vpp
+fi
+
+pkill vpp
+
+cat > /etc/vpp/startup-a.conf << \EOF
+unix { cli-listen /run/vpp/cli-a.sock cli-prompt a }
+api-segment { prefix a }
+plugins { plugin dpdk_plugin.so { disable } }
+EOF
+cat > /etc/vpp/startup-b.conf << \EOF
+unix { cli-listen /run/vpp/cli-b.sock cli-prompt b }
+api-segment { prefix b }
+plugins { plugin dpdk_plugin.so { disable } }
+EOF
+
+vpp -c /etc/vpp/startup-a.conf
+vpp -c /etc/vpp/startup-b.conf
+
+alias vppctla='vppctl -s /run/vpp/cli-a.sock'
+alias vppctlb='vppctl -s /run/vpp/cli-b.sock'
+
+ip link add name a type veth peer name b
+ip link set dev a up
+ip link set dev b up
+sleep 3
+vppctla create host-interface name a
+vppctla set int ip address host-a 10.10.1.1/24
+vppctla set int state host-a up
+
+vppctla create loopback interface
+vppctla set interface ip address loop0 1.1.1.1/32
+vppctla set interface state loop0 up
+
+vppctla create gre tun src 172.16.0.2 dst 172.16.0.1
+
+vppctla mpls table add 0
+vppctla mpls local-label 11 1.1.1.1/32
+vppctla set interface mpls host-a enable
+vppctla ip route add 2.2.2.2/32 via 10.10.1.2 host-a out-labels 22
+
+
+vppctlb create host-interface name b
+vppctlb set int ip address host-b 10.10.1.2/24
+vppctlb set int state host-b up
+
+vppctlb create loopback interface
+vppctlb set interface ip address loop0 2.2.2.2/32
+vppctlb set interface state loop0 up
+
+vppctlb mpls table add 0
+vppctlb mpls local-label 22 2.2.2.2/32
+vppctlb set interface mpls host-b enable
+vppctlb ip route add 1.1.1.1/32 via 10.10.1.1 host-b out-labels 11
+
+vppctla show int
+vppctla show int addr
+vppctlb show int
+vppctlb show int addr
