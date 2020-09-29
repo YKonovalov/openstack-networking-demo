@@ -1,5 +1,5 @@
 #!/bin/sh
-. ./.config.sh
+. ./config.sh
 . ./common/functions.sh
 
 T=`mktemp`

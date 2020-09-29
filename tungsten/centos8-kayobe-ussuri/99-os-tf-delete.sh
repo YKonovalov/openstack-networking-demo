@@ -1,5 +1,5 @@
 #!/bin/sh
-. ./.config.sh
+. ./config.sh
 . ./common/functions.sh
 
 # on the kayobe control host
@@ -29,15 +29,34 @@ cp-compute /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/ifcfg-eth0
 cp-compute /tmp/ifcfg-vhost0 /etc/sysconfig/network-scripts/ifcfg-vhost0
 on-compute rm -f /etc/systemd/network/*
 cp-compute /tmp/80-vhost.network /etc/systemd/network/80-vhost-dhcp.network
-on-all 'ln -fs /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf'
 on-compute 'rm -f /etc/sysconfig/network-scripts/ifcfg-p-*'
+on-all 'ln -fs /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf'
 
-rm -rf /etc/contrail/
-on-all 'docker ps|awk "NR!=1 && \$2~/^build/ {print \$1}"|while read i; do docker rm -f -v $i; done'
-on-all 'rm -rf /etc/contrail/'
+rm -rf src venvs /etc/kayobe /etc/kolla /opt/kayobe /etc/contrail/
+on-all 'docker ps -q|while read i; do docker rm -f -v $i; done'
+on-all 'docker volume prune -f'
+on-all 'docker image ls -q|xargs docker image rm -f'
+on-all 'rm -rf /opt/kayobe/ /etc/contrail/'
 on-compute 'rm -f /var/run/libvirt/libvirt-sock'
+
+
+cat > /tmp/daemon.json << \EOF
+{
+    "insecure-registries": [
+        "build:5000"
+    ],
+    "live-restore": true,
+    "log-opts": {
+        "max-file": "5",
+        "max-size": "50m"
+    },
+    "mtu": 1500,
+    "storage-driver": "overlay",
+    "storage-opts": []
+}
+EOF
+cp-all /tmp/daemon.json /etc/docker/daemon.json
 
 on-compute 'reboot'
 
-#cp-compute /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/ifcfg-eth0
-#on-compute 'rm -f /etc/sysconfig/network-scripts/{ifcfg-p-*,ifcfg-vhost*};'
+#on-compute 'rm -f /etc/sysconfig/network-scripts/{ifcfg-p-*,ifcfg-vhost*}; reboot'

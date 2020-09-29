@@ -1,5 +1,5 @@
 #!/bin/sh
-. ./.config.sh
+. ./config.sh
 . ./common/functions.sh
 
 # on the kayobe control host
@@ -136,6 +136,7 @@ kolla_enable_neutron_provider_networks: False
 #kolla_neutron_ml2_type_drivers: [geneve]
 #kolla_neutron_ml2_tenant_network_types: [geneve]
 #kolla_neutron_ml2_extension_drivers: [port_security]
+kolla_enable_heat: true
 EOF
 
 cat > /etc/kayobe/kolla/globals.yml << EOF
@@ -253,7 +254,7 @@ kolla_config:
     enable_gnocchi: no
     enable_grafana: no
     enable_haproxy: no
-    enable_heat: no
+    enable_heat: yes
     enable_influxdb: no
     enable_ironic_ipxe: no
     enable_ironic: no
@@ -325,7 +326,7 @@ kolla_enable_freezer: false
 kolla_enable_gnocchi: false
 kolla_enable_grafana: false
 kolla_enable_haproxy: false
-kolla_enable_heat: false
+kolla_enable_heat: true
 kolla_enable_influxdb: false
 kolla_enable_ironic: false
 kolla_enable_ironic_ipxe: false
@@ -383,15 +384,15 @@ source "\$KAYOBE_VENV_PATH/bin/activate"
 #cd "\$KAYOBE_DATA_FILES_PATH"
 EOF
 
-ktbox_in(){
-  ssh head 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
-}
-alias openstack="ktbox openstack"
+#ktbox_in(){
+#  ssh head 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
+#}
+#alias openstack="ktbox openstack"
 
-ktbox(){
-  ssh -n head 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
-}
-alias openstack_stdin="ktbox_in openstack"
+#ktbox(){
+#  ssh -n head 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
+#}
+#alias openstack_stdin="ktbox_in openstack"
 
 openstackResourcesAdd(){
   openstack service list
@@ -410,6 +411,119 @@ pub-b 192.168.169.0/24
 EOF
 }
 
+cat > /tmp/heat.yaml << \EOF
+heat_template_version: 2018-08-31
+description: SDN demo set of resources heat template
+resources:
+  net1:
+    type: OS::Neutron::Net
+    properties:
+      name: net1
+  net1-v4:
+    type: OS::Neutron::Subnet
+    properties:
+      name: net1-v4
+      network_id: { get_resource: net1 }
+      cidr: 10.0.1.0/24
+
+  net2:
+    type: OS::Neutron::Net
+    properties:
+      name: net2
+  net2-v4:
+    type: OS::Neutron::Subnet
+    properties:
+      name: net2-v4
+      network_id: { get_resource: net2 }
+      cidr: 10.0.2.0/24
+
+  net1ers:
+    type: OS::Nova::ServerGroup
+    properties:
+      name: net1ers
+      policies: [anti-affinity]
+  net2ers:
+    type: OS::Nova::ServerGroup
+    properties:
+      name: net2ers
+      policies: [anti-affinity]
+
+  net1-a:
+    type: OS::Nova::Server
+    properties:
+      name: net1-a
+      image: cirros2
+      flavor: m1.tiny
+      networks:
+      - network: { get_resource: net1 }
+      scheduler_hints:
+        group: { get_resource: net1ers }
+  net1-b:
+    type: OS::Nova::Server
+    properties:
+      name: net1-b
+      image: cirros2
+      flavor: m1.tiny
+      networks:
+      - network: { get_resource: net1 }
+      scheduler_hints:
+        group: { get_resource: net1ers }
+  net1-c:
+    type: OS::Nova::Server
+    properties:
+      name: net1-c
+      image: cirros2
+      flavor: m1.tiny
+      networks:
+      - network: { get_resource: net1 }
+      scheduler_hints:
+        group: { get_resource: net1ers }
+
+  net2-a:
+    type: OS::Nova::Server
+    properties:
+      name: net2-a
+      image: cirros2
+      flavor: m1.tiny
+      networks:
+      - network: { get_resource: net2 }
+      scheduler_hints:
+        group: { get_resource: net2ers }
+
+  net2-b:
+    type: OS::Nova::Server
+    properties:
+      name: net2-b
+      image: cirros2
+      flavor: m1.tiny
+      networks:
+      - network: { get_resource: net2 }
+      scheduler_hints:
+        group: { get_resource: net2ers }
+  net2-c:
+    type: OS::Nova::Server
+    properties:
+      name: net2-c
+      image: cirros2
+      flavor: m1.tiny
+      networks:
+      - network: { get_resource: net2 }
+      scheduler_hints:
+        group: { get_resource: net2ers }
+
+outputs:
+  server_networks:
+    description: The networks of the deployed server
+    value: { get_attr: [net1-a, networks] }
+EOF
+
+openstackResourcesAddHeat(){
+  openstack service list
+  curl -OL --progress http://download.cirros-cloud.net/0.5.1/cirros-0.5.1-x86_64-disk.img
+  cat cirros-0.5.1-x86_64-disk.img|openstack image create cirros2 --disk-format qcow2 --public --container-format bare
+  openstack flavor create --public m1.tiny --id auto --ram 1024 --disk 10
+  openstack stack create -t /tmp/heat.yaml tf-demo
+}
 
 networkSetConf() {
 cat > /tmp/ifcfg-eth0 << EOF
@@ -472,7 +586,7 @@ time (
   tlog kayobe overcloud host configure
   tlog kayobe overcloud service deploy
 
-#  dockerFixLocalRegistry
+  dockerFixLocalRegistry
   source venvs/kolla-ansible/bin/activate
     tlog ansible-playbook -i /etc/kayobe/inventory -e config_file=/etc/kayobe/tf.yml src/tf-ansible-deployer/playbooks/install_contrail.yml
   deactivate
@@ -482,8 +596,10 @@ time (
   networkSetConf
 
   # resources
-  cp-head /etc/kolla/*-openrc.sh /etc/kolla/kolla-toolbox/
-  time openstackResourcesAdd
+  #cp-head /etc/kolla/*-openrc.sh /etc/kolla/kolla-toolbox/
+  #time openstackResourcesAdd
+  . /etc/kolla/admin-openrc.sh
+  time openstackResourcesAddHeat
 
   cat /tmp/tlog
 )
