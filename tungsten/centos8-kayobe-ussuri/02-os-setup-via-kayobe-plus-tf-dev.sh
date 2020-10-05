@@ -162,6 +162,9 @@ opencontrail_webui_ip:      192.168.192.3
 
 customize_etc_hosts: False
 computes_need_external_bridge: False
+
+# tunsten conflicts on rabbit default port 4369 otherwise
+#rabbitmq_epmd_port: 4370
 EOF
 
 cat > /etc/kayobe/dns.yml << EOF
@@ -212,6 +215,8 @@ contrail_configuration:
   CONTRAIL_VERSION: dev
   AUTH_MODE: keystone
   KEYSTONE_AUTH_URL_VERSION: /v3
+#  RABBITMQ_NODES: rabbit
+#  RABBITMQ_EPMD_PORT: 4370
 kolla_config:
   kolla_passwords:
     keystone_admin_password: admin
@@ -540,22 +545,73 @@ TYPE=kernel
 NM_CONTROLLED=NO
 BIND_INT=eth0
 EOF
-cat > /tmp/80-vhost.network << EOF
+cat > /tmp/80-eth0.network << EOF
 [Match]
-Name=vhost*
+Name=eth0
 [Network]
 DHCP=yes
 LLMNR=no
 MulticastDNS=no
 EOF
+cat > /tmp/80-eth0-head.network << EOF
+[Match]
+Name=eth0
+[Network]
+DHCP=yes
+LLMNR=no
+MulticastDNS=no
+[Address]
+Label=eth0:0
+Address=192.168.192.154/24
+EOF
+cat > /tmp/80-vhost0.network << EOF
+[Match]
+Name=vhost0
+[Network]
+DHCP=yes
+LLMNR=no
+MulticastDNS=no
+EOF
+cat > /tmp/networkd-disable-ip-on-eth0-when-vhost0.service << \EOF
+[Unit]
+Description=Disable dhcp on eth0 when vhost0 appear
+Requires=systemd-networkd.service
+After=sys-subsystem-net-devices-vhost0.device
+
+[Service]
+ExecStart=/usr/bin/sh -c '/usr/lib/systemd/systemd-networkd-wait-online -i vhost0 && (rm -f /etc/systemd/network/80-eth0.network && /usr/bin/networkctl reload)'
+
+[Install]
+Also=systemd-networkd-wait-online.service
+EOF
+cat >/tmp/hosts << EOF
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+192.168.192.2   jump
+192.168.192.3   head
+192.168.192.154 rabbit # static ip on head node specifically for tungstenfabric rabbit instance
+192.168.192.4   compute1
+192.168.192.5   compute2
+192.168.192.6   compute3
+192.168.192.7   sgw1
+192.168.192.8   sgw2
+192.168.192.9   sgw3
+192.168.192.10  build
+EOF
+#  cp-all /tmp/hosts /etc/hosts
+#  cp-head /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/ifcfg-eth0
+#  cp-head /tmp/80-eth0-head.network /etc/systemd/network/80-eth0.network
+#  on-head 'networkctl reload'
   cp-compute /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/ifcfg-eth0
   cp-compute /tmp/ifcfg-vhost0 /etc/sysconfig/network-scripts/ifcfg-vhost0
   on-compute rm -f /etc/systemd/network/*
-  cp-compute /tmp/80-vhost.network /etc/systemd/network/80-vhost-dhcp.network
+  cp-compute /tmp/80-eth0.network /etc/systemd/network/
+  cp-compute /tmp/80-vhost0.network /etc/systemd/network/
+  on-compute 'networkctl reload'
+  cp-compute /tmp/networkd-disable-ip-on-eth0-when-vhost0.service /etc/systemd/system/
+  on-compute systemctl daemon-reload
+  on-compute systemctl enable --now networkd-disable-ip-on-eth0-when-vhost0.service
   on-all 'ln -fs /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf'
-  #on-compute 'rm -f /etc/sysconfig/network-scripts/ifcfg-p-*'
-  #on-compute 'systemctl restart network; systemctl restart systemd-networkd'
-  on-compute 'systemctl restart systemd-networkd'
 }
 
 dockerFixLocalRegistry() {
@@ -583,13 +639,23 @@ alias tlog='\time -f "%E %C (exit code: %X)" -a -o /tmp/tlog'
 time (
   source ~/kayobe.rc
   tlog kayobe   control host bootstrap
-  tlog kayobe overcloud host configure
-  tlog kayobe overcloud service deploy
 
+  networkSetConf
   dockerFixLocalRegistry
   source venvs/kolla-ansible/bin/activate
     tlog ansible-playbook -i /etc/kayobe/inventory -e config_file=/etc/kayobe/tf.yml src/tf-ansible-deployer/playbooks/install_contrail.yml
   deactivate
+
+  source ~/kayobe.rc
+  tlog kayobe overcloud host configure
+
+  on-head lsof -iTCP:4369 -sTCP:LISTEN >/tmp/epmd.listen.log
+  on-head docker stop config_database_rabbitmq_1
+
+  tlog kayobe overcloud service deploy
+
+  on-head docker start config_database_rabbitmq_1
+  on-head lsof -iTCP:4369 -sTCP:LISTEN >>/tmp/epmd.listen.log
 
   # hacks
   on-compute 'docker exec  -u root nova_compute alternatives --set python /usr/bin/python3'

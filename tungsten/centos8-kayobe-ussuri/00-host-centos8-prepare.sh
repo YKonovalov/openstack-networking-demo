@@ -33,7 +33,7 @@ all 'dnf -y install systemd-networkd'
 all systemctl disable NetworkManager
 all systemctl stop NetworkManager
 all systemctl enable systemd-networkd
-all 'echo -e "[Match]\nName=eth*\n[Network]\nDHCP=yes\n" > /etc/systemd/network/80-dhcp.network'
+all 'echo -e "[Match]\nName=eth0\n[Network]\nDHCP=yes\n" > /etc/systemd/network/80-eth0.network'
 all systemctl start systemd-networkd
 all 'ln -fs /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf'
 all 'sed -i "0,/^hosts:/s/^\(hosts:.*\)/#&\nhosts:      resolve/" /etc/nsswitch.conf'
@@ -42,6 +42,11 @@ all systemctl enable systemd-resolved
 all systemctl start systemd-resolved
 }
 
+function init_tools_on_vmware(){
+all '[ `systemd-detect-virt` == "vmware" ] && dnf -y install open-vm-tools && systemctl enable --now vgauthd.service vmtoolsd.service'
+}
+
 init_ssh
 init_pkgs
 init_net
+init_tools_on_vmware
