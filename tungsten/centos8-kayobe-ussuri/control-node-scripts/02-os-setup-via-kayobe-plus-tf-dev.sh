@@ -580,10 +580,12 @@ time (
   # FIXME3: We should switch to our own docker resistry in kolla as well. Then we can remove this hack.
   dockerFixLocalRegistry
 
+  source venvs/kolla-ansible/bin/activate
   tlog ansible-playbook -i /etc/kayobe/inventory \
     -e config_file=/etc/kayobe/tf.yml \
     -e ansible_python_interpreter=/opt/kayobe/venvs/kolla-ansible/bin/python \
     src/tf-ansible-deployer/playbooks/install_contrail.yml
+  deactivate
 
   # FIXME3: Stopping tungsten rabbit to free epmd (TCP:4369) port, otherwise kayobe will fail
   on-head docker stop config_database_rabbitmq_1
