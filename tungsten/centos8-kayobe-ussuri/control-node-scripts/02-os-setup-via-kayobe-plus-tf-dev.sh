@@ -32,20 +32,11 @@ source "venvs/kayobe/bin/activate"
  pip install src/kayobe
 deactivate
 
+# FIXME we need to have similar venvs paths as on target hosts for tungsten playbooks run
 if ! [ -L /opt/kayobe/venvs ]; then
   mkdir -p /opt/kayobe
   ln -fs /root/venvs /opt/kayobe/venvs
 fi
-
-pre_configure(){
-  git clone https://github.com/openstack/kayobe-config.git -b stable/$OS src/kayobe-config
-  grep -rv "$empty_match" src/kayobe-config/etc/kayobe/|
-    while IFS=: read file line; do
-      target="/${file#*/*/}"
-      mkdir -p "$(dirname $target)"
-      echo "$line" >> "$target";
-    done
-}
 
 mkdir -p /etc/kayobe/inventory/group_vars/{controllers,compute,overcloud} /etc/kayobe/kolla/config
 
@@ -176,9 +167,6 @@ opencontrail_webui_ip:      $head_ip
 
 customize_etc_hosts: False
 computes_need_external_bridge: False
-
-# tunsten conflicts on rabbit default port 4369 otherwise
-#rabbitmq_epmd_port: 4370
 EOF
 
 cat > /etc/kayobe/dns.yml << EOF
@@ -191,7 +179,6 @@ provider_config:
     domainsuffix: local
 instances:
   head:
-    ansible_python_interpreter: "/opt/kayobe/venvs/kolla-ansible/bin/python"
     provider: bms
     ip: $head_ip
     roles:
@@ -203,21 +190,18 @@ instances:
       webui:
       openstack:
   compute1:
-    ansible_python_interpreter: "/opt/kayobe/venvs/kolla-ansible/bin/python"
     provider: bms
     ip: $compute1_ip
     roles:
       vrouter:
       openstack_compute:
   compute2:
-    ansible_python_interpreter: "/opt/kayobe/venvs/kolla-ansible/bin/python"
     provider: bms
     ip: $compute2_ip
     roles:
       vrouter:
       openstack_compute:
   compute3:
-    ansible_python_interpreter: "/opt/kayobe/venvs/kolla-ansible/bin/python"
     provider: bms
     ip: $compute3_ip
     roles:
@@ -233,8 +217,6 @@ contrail_configuration:
   CONTRAIL_VERSION: dev
   AUTH_MODE: keystone
   KEYSTONE_AUTH_URL_VERSION: /v3
-#  RABBITMQ_NODES: rabbit
-#  RABBITMQ_EPMD_PORT: 4370
 kolla_config:
   kolla_passwords:
     keystone_admin_password: admin
@@ -407,33 +389,6 @@ source "\$KAYOBE_VENV_PATH/bin/activate"
 #cd "\$KAYOBE_DATA_FILES_PATH"
 EOF
 
-#ktbox_in(){
-#  ssh head 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
-#}
-#alias openstack="ktbox openstack"
-
-#ktbox(){
-#  ssh -n head 'docker exec -i -u root -w /var/lib/kolla/config_files kolla_toolbox bash -c "source admin-openrc.sh; '"$@"'"'
-#}
-#alias openstack_stdin="ktbox_in openstack"
-
-openstackResourcesAdd(){
-  openstack service list
-  curl -OL --progress http://download.cirros-cloud.net/0.5.1/cirros-0.5.1-x86_64-disk.img
-  cat cirros-0.5.1-x86_64-disk.img|openstack_stdin image create cirros2 --disk-format qcow2 --public --container-format bare
-  openstack flavor create --public m1.tiny --id auto --ram 1024 --disk 10
-  while read net cidr; do
-    netid="$(openstack network create --share $net -c id -f value < /dev/null)"; [ -n "$netid" ]
-    openstack subnet create --network $net --ip-version 4 --subnet-range $cidr $net-v4
-    for name in a b c; do
-      openstack server create --flavor m1.tiny --image cirros2 --network=$netid $net-$name
-    done
-  done << EOF
-pub-a 192.168.168.0/24
-pub-b 192.168.169.0/24
-EOF
-}
-
 cat > /tmp/heat.yaml << \EOF
 heat_template_version: 2018-08-31
 description: SDN demo set of resources heat template
@@ -548,18 +503,6 @@ openstackResourcesAddHeat(){
   openstack stack create -t /tmp/heat.yaml tf-demo
 }
 
-to_static(){
-cat >/tmp/tostatic.sh << \EOF
-IP=$(awk -v h=`hostname` "\$3==h{print \$1}" /etc/hosts)
-eval `ipcalc --minaddr $IP/24`
-echo -e "[Match]\nName=eth0\n[Network]\nAddress=$IP/24\nGateway=$MINADDR\nDNS=8.8.8.8" > /etc/systemd/network/80-eth0.network
-EOF
-cp-all /tmp/tostatic.sh /tmp/tostatic.sh
-on-all 'sh /tmp/tostatic.sh'
-on-all networkctl reload
-}
-STATIC='(eval "$(cat /run/systemd/netif/leases/$(cat /sys/class/net/eth0/ifindex)|awk "{print $1}")"; echo -e "[Match]\nName=eth0\n[Network]\nDHCP=no\nAddress=$ADDRESS/24\nGateway=$ROUTER\nDNS=$DNS\nDomain=$DOMAINNAME\n") > /etc/systemd/network/80-eth0.network'
-
 networkSetConf() {
 cat > /tmp/ifcfg-eth0 << EOF
 DEVICE=eth0
@@ -575,26 +518,6 @@ TYPE=kernel
 NM_CONTROLLED=NO
 BIND_INT=eth0
 EOF
-cat > /tmp/80-eth0.network << EOF
-[Match]
-Name=eth0
-[Network]
-DHCP=yes
-LLMNR=no
-MulticastDNS=no
-[DHCPv4]
-ClientIdentifier=mac
-EOF
-cat > /tmp/80-vhost0.network << EOF
-[Match]
-Name=vhost0
-[Network]
-DHCP=yes
-LLMNR=no
-MulticastDNS=no
-[DHCPv4]
-ClientIdentifier=mac
-EOF
 cat > /tmp/networkd-disable-ip-on-eth0-when-vhost0.service << \EOF
 [Unit]
 Description=Disable dhcp on eth0 when vhost0 appear
@@ -609,8 +532,6 @@ Also=systemd-networkd-wait-online.service
 EOF
 
   cp-compute /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/ifcfg-eth0
-  on-compute '[ -f /root/80-eth0.network ] || cp /etc/systemd/network/80-eth0.network /root/'
-  on-compute '[ -f /root/80-eth0.network ] || sed "s/eth0/vhost0/" /root/80-eth0.network > /etc/systemd/network/80-vhost0.network'
   cp-compute /tmp/networkd-disable-ip-on-eth0-when-vhost0.service /etc/systemd/system/
   on-compute systemctl daemon-reload
   on-compute systemctl enable --now networkd-disable-ip-on-eth0-when-vhost0.service
@@ -645,50 +566,40 @@ rm -f /tmp/tlog
 alias tlog='\time -f "%E %C (exit code: %X)" -a -o /tmp/tlog'
 time (
   networkSetConf
+
+  # FIXME1: Change iface name to eth0, otherwise kolla-ansible will fail to find host ip
   sed -i "s/common_interface: .*/common_interface: eth0/" /etc/kayobe/inventory/group_vars/compute/network-interfaces
 
   source ~/kayobe.rc
   tlog kayobe   control host bootstrap
   tlog kayobe overcloud host configure
 
+  # FIXME2: should be installed by 'kayobe overcloud host configure'
   on-all '/opt/kayobe/venvs/kolla-ansible/bin/pip install docker-compose'
 
-  networkSetConf vhost
+  # FIXME3: We should switch to our own docker resistry in kolla as well. Then we can remove this hack.
   dockerFixLocalRegistry
-  source venvs/kolla-ansible/bin/activate
-#    tlog ansible-playbook -i /etc/kayobe/inventory \
-#           -e config_file=/etc/kayobe/tf.yml \
-#           -e ansible_python_interpreter=/opt/kayobe/venvs/kolla-ansible/bin/python \
-#           src/tf-ansible-deployer/playbooks/configure_instances.yml
-    tlog ansible-playbook -i /etc/kayobe/inventory \
-           -e config_file=/etc/kayobe/tf.yml \
-           -e ansible_python_interpreter=/opt/kayobe/venvs/kolla-ansible/bin/python \
-           src/tf-ansible-deployer/playbooks/install_contrail.yml
-  deactivate
-  sed -i "s/common_interface: .*/common_interface: vhost0/" /etc/kayobe/inventory/group_vars/compute/network-interfaces
 
-  ###
-  ## Start hack for two rabbits using common epmd
-  #
-  #on-head lsof -iTCP:4369 -sTCP:LISTEN >/tmp/epmd.listen.log
+  tlog ansible-playbook -i /etc/kayobe/inventory \
+    -e config_file=/etc/kayobe/tf.yml \
+    -e ansible_python_interpreter=/opt/kayobe/venvs/kolla-ansible/bin/python \
+    src/tf-ansible-deployer/playbooks/install_contrail.yml
+
+  # FIXME3: Stopping tungsten rabbit to free epmd (TCP:4369) port, otherwise kayobe will fail
   on-head docker stop config_database_rabbitmq_1
+
+  # FIXME1: Change iface name to vhost0, otherwise kolla-ansible will fail to find host ip
+  sed -i "s/common_interface: .*/common_interface: vhost0/" /etc/kayobe/inventory/group_vars/compute/network-interfaces
 
   source ~/kayobe.rc
   tlog kayobe overcloud service deploy
 
-  ###
-  ## Finnish Hack for two rabbits using common epmd
-  #
+  # FIXME4: Starting tungsten rabbit that we stopped earlier
   on-head docker start config_database_rabbitmq_1
-  #on-head lsof -iTCP:4369 -sTCP:LISTEN >>/tmp/epmd.listen.log
 
-  # hacks for tungsten and nova_compute
+  # FIXME5: tungsten nova-compute driver execs python script with unversioned python shebang
   on-compute 'docker exec  -u root nova_compute alternatives --set python /usr/bin/python3'
-  networkSetConf vhost
 
-  # resources
-  #cp-head /etc/kolla/*-openrc.sh /etc/kolla/kolla-toolbox/
-  #time openstackResourcesAdd
   . /etc/kolla/admin-openrc.sh
   time openstackResourcesAddHeat
 

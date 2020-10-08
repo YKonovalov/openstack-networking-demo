@@ -17,39 +17,12 @@ TYPE=kernel
 NM_CONTROLLED=NO
 BIND_INT=eth0
 EOF
-cat > /tmp/80-eth0.network << EOF
-[Match]
-Name=eth0
-[Network]
-DHCP=yes
-LLMNR=no
-MulticastDNS=no
-[DHCPv4]
-ClientIdentifier=mac
-EOF
-cat > /tmp/80-vhost0.network << EOF
-[Match]
-Name=vhost0
-[Network]
-DHCP=yes
-LLMNR=no
-MulticastDNS=no
-[DHCPv4]
-ClientIdentifier=mac
-EOF
 
-on-compute 'rm -f /etc/sysconfig/network-scripts/ifcfg-p-*'
 cp-compute /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/ifcfg-eth0
 cp-compute /tmp/ifcfg-vhost0 /etc/sysconfig/network-scripts/ifcfg-vhost0
 
-on-compute rm -f /etc/systemd/network/*
-cp-compute /tmp/80-eth0.network /etc/systemd/network/
-cp-compute /tmp/80-vhost0.network /etc/systemd/network/
-
 on-compute systemctl disable networkd-disable-ip-on-eth0-when-vhost0.service
 on-compute rm -f /etc/systemd/system/networkd-disable-ip-on-eth0-when-vhost0.service
-
-on-all 'ln -fs /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf'
 
 rm -rf src venvs /etc/kayobe /etc/kolla /opt/kayobe /etc/contrail/
 on-all 'docker ps -q|xargs docker rm -f -v'
