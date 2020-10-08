@@ -24,6 +24,8 @@ Name=eth0
 DHCP=yes
 LLMNR=no
 MulticastDNS=no
+[DHCPv4]
+ClientIdentifier=mac
 EOF
 cat > /tmp/80-vhost0.network << EOF
 [Match]
@@ -32,6 +34,8 @@ Name=vhost0
 DHCP=yes
 LLMNR=no
 MulticastDNS=no
+[DHCPv4]
+ClientIdentifier=mac
 EOF
 
 on-compute 'rm -f /etc/sysconfig/network-scripts/ifcfg-p-*'

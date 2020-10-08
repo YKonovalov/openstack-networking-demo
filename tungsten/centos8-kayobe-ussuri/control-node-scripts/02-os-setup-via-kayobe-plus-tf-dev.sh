@@ -3,12 +3,21 @@
 . ./common/functions.sh
 
 # on the kayobe control host
-yum install -y python3-devel libffi-devel gcc openssl-devel python3-libselinux time
+dnf -y install python3-devel libffi-devel gcc openssl-devel python3-libselinux time jq
+dnf -y install centos-release-openstack-ussuri
+dnf -y install python3-openstackclient python3-heatclient
+on-all 'dnf -y install lsof jq python3-virtualenv'
+on-all 'dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo'
+on-all 'dnf -y install docker-ce --nobest'
 #
 # pdsh -w head,compute[1-3] 'cat /root/.ssh/authorized_keys >> /home/kolla/.ssh/authorized_keys'
 #
 cd
 mkdir src
+head_ip=$(dig +short head A)
+compute1_ip=$(dig +short compute1 A)
+compute2_ip=$(dig +short compute2 A)
+compute3_ip=$(dig +short compute3 A)
 
 git clone https://github.com/openstack/kayobe.git -b stable/$OS src/kayobe
 git clone https://github.com/tungstenfabric/tf-ansible-deployer.git -b master src/tf-ansible-deployer
@@ -22,6 +31,11 @@ source "venvs/kayobe/bin/activate"
  pip install -U pip
  pip install src/kayobe
 deactivate
+
+if ! [ -L /opt/kayobe/venvs ]; then
+  mkdir -p /opt/kayobe
+  ln -fs /root/venvs /opt/kayobe/venvs
+fi
 
 pre_configure(){
   git clone https://github.com/openstack/kayobe-config.git -b stable/$OS src/kayobe-config
@@ -75,7 +89,6 @@ cat > /etc/kayobe/inventory/group_vars/controllers/network-interfaces << EOF
 common_interface: eth0
 common_bootproto: none
 EOF
-
 cat > /etc/kayobe/inventory/group_vars/compute/network-interfaces << EOF
 common_interface: vhost0
 common_bootproto: none
@@ -103,12 +116,12 @@ EOF
 
 cat >  /etc/kayobe/networks-vars.yml << EOF
 common_ips:
- head: 192.168.192.3
- compute1: 192.168.192.4
- compute2: 192.168.192.5
- compute3: 192.168.192.6
+ head: $head_ip
+ compute1: $compute1_ip
+ compute2: $compute2_ip
+ compute3: $compute3_ip
 common_fqdn: head.
-common_vip_address: 192.168.192.3
+common_vip_address: $head_ip
 EOF
 
 cat > /etc/kayobe/hosts-vars.yml << EOF
@@ -125,6 +138,7 @@ openstack_branch: stable/$OS
 #kolla_ansible_source_url: https://github.com/tungstenfabric/tf-kolla-ansible.git
 kolla_ansible_source_url: https://github.com/YKonovalov/tf-kolla-ansible
 kolla_ansible_source_version: contrail/$OS
+#kolla_ansible_user: root
 kolla_ansible_custom_passwords:
  keystone_admin_password: admin
  metadata_secret: contrail
@@ -156,9 +170,9 @@ neutron_plugin_agent: opencontrail
 #neutron_plugin_agent: opencontrail-ml2
 neutron_fwaas_version: v2
 
-opencontrail_api_server_ip: 192.168.192.3
-opencontrail_collector_ip:  192.168.192.3
-opencontrail_webui_ip:      192.168.192.3
+opencontrail_api_server_ip: $head_ip
+opencontrail_collector_ip:  $head_ip
+opencontrail_webui_ip:      $head_ip
 
 customize_etc_hosts: False
 computes_need_external_bridge: False
@@ -177,8 +191,9 @@ provider_config:
     domainsuffix: local
 instances:
   head:
+    ansible_python_interpreter: "/opt/kayobe/venvs/kolla-ansible/bin/python"
     provider: bms
-    ip: 192.168.192.3
+    ip: $head_ip
     roles:
       config_database:
       config:
@@ -188,20 +203,23 @@ instances:
       webui:
       openstack:
   compute1:
+    ansible_python_interpreter: "/opt/kayobe/venvs/kolla-ansible/bin/python"
     provider: bms
-    ip: 192.168.192.4
+    ip: $compute1_ip
     roles:
       vrouter:
       openstack_compute:
   compute2:
+    ansible_python_interpreter: "/opt/kayobe/venvs/kolla-ansible/bin/python"
     provider: bms
-    ip: 192.168.192.5
+    ip: $compute2_ip
     roles:
       vrouter:
       openstack_compute:
   compute3:
+    ansible_python_interpreter: "/opt/kayobe/venvs/kolla-ansible/bin/python"
     provider: bms
-    ip: 192.168.192.6
+    ip: $compute3_ip
     roles:
       vrouter:
       openstack_compute:
@@ -530,6 +548,18 @@ openstackResourcesAddHeat(){
   openstack stack create -t /tmp/heat.yaml tf-demo
 }
 
+to_static(){
+cat >/tmp/tostatic.sh << \EOF
+IP=$(awk -v h=`hostname` "\$3==h{print \$1}" /etc/hosts)
+eval `ipcalc --minaddr $IP/24`
+echo -e "[Match]\nName=eth0\n[Network]\nAddress=$IP/24\nGateway=$MINADDR\nDNS=8.8.8.8" > /etc/systemd/network/80-eth0.network
+EOF
+cp-all /tmp/tostatic.sh /tmp/tostatic.sh
+on-all 'sh /tmp/tostatic.sh'
+on-all networkctl reload
+}
+STATIC='(eval "$(cat /run/systemd/netif/leases/$(cat /sys/class/net/eth0/ifindex)|awk "{print $1}")"; echo -e "[Match]\nName=eth0\n[Network]\nDHCP=no\nAddress=$ADDRESS/24\nGateway=$ROUTER\nDNS=$DNS\nDomain=$DOMAINNAME\n") > /etc/systemd/network/80-eth0.network'
+
 networkSetConf() {
 cat > /tmp/ifcfg-eth0 << EOF
 DEVICE=eth0
@@ -552,17 +582,8 @@ Name=eth0
 DHCP=yes
 LLMNR=no
 MulticastDNS=no
-EOF
-cat > /tmp/80-eth0-head.network << EOF
-[Match]
-Name=eth0
-[Network]
-DHCP=yes
-LLMNR=no
-MulticastDNS=no
-[Address]
-Label=eth0:0
-Address=192.168.192.154/24
+[DHCPv4]
+ClientIdentifier=mac
 EOF
 cat > /tmp/80-vhost0.network << EOF
 [Match]
@@ -571,6 +592,8 @@ Name=vhost0
 DHCP=yes
 LLMNR=no
 MulticastDNS=no
+[DHCPv4]
+ClientIdentifier=mac
 EOF
 cat > /tmp/networkd-disable-ip-on-eth0-when-vhost0.service << \EOF
 [Unit]
@@ -584,34 +607,18 @@ ExecStart=/usr/bin/sh -c '/usr/lib/systemd/systemd-networkd-wait-online -i vhost
 [Install]
 Also=systemd-networkd-wait-online.service
 EOF
-cat >/tmp/hosts << EOF
-127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
-::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
-192.168.192.2   jump
-192.168.192.3   head
-192.168.192.154 rabbit # static ip on head node specifically for tungstenfabric rabbit instance
-192.168.192.4   compute1
-192.168.192.5   compute2
-192.168.192.6   compute3
-192.168.192.7   sgw1
-192.168.192.8   sgw2
-192.168.192.9   sgw3
-192.168.192.10  build
-EOF
-#  cp-all /tmp/hosts /etc/hosts
-#  cp-head /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/ifcfg-eth0
-#  cp-head /tmp/80-eth0-head.network /etc/systemd/network/80-eth0.network
-#  on-head 'networkctl reload'
+
   cp-compute /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/ifcfg-eth0
-  cp-compute /tmp/ifcfg-vhost0 /etc/sysconfig/network-scripts/ifcfg-vhost0
-  on-compute rm -f /etc/systemd/network/*
-  cp-compute /tmp/80-eth0.network /etc/systemd/network/
-  cp-compute /tmp/80-vhost0.network /etc/systemd/network/
-  on-compute 'networkctl reload'
+  on-compute '[ -f /root/80-eth0.network ] || cp /etc/systemd/network/80-eth0.network /root/'
+  on-compute '[ -f /root/80-eth0.network ] || sed "s/eth0/vhost0/" /root/80-eth0.network > /etc/systemd/network/80-vhost0.network'
   cp-compute /tmp/networkd-disable-ip-on-eth0-when-vhost0.service /etc/systemd/system/
   on-compute systemctl daemon-reload
   on-compute systemctl enable --now networkd-disable-ip-on-eth0-when-vhost0.service
   on-all 'ln -fs /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf'
+  if [ -n "$1" ]; then
+    cp-compute /tmp/ifcfg-vhost0 /etc/sysconfig/network-scripts/ifcfg-vhost0
+  fi
+  on-compute 'networkctl reload'
 }
 
 dockerFixLocalRegistry() {
@@ -637,29 +644,47 @@ EOF
 rm -f /tmp/tlog
 alias tlog='\time -f "%E %C (exit code: %X)" -a -o /tmp/tlog'
 time (
+  networkSetConf
+  sed -i "s/common_interface: .*/common_interface: eth0/" /etc/kayobe/inventory/group_vars/compute/network-interfaces
+
   source ~/kayobe.rc
   tlog kayobe   control host bootstrap
-
-  networkSetConf
-  dockerFixLocalRegistry
-  source venvs/kolla-ansible/bin/activate
-    tlog ansible-playbook -i /etc/kayobe/inventory -e config_file=/etc/kayobe/tf.yml src/tf-ansible-deployer/playbooks/install_contrail.yml
-  deactivate
-
-  source ~/kayobe.rc
   tlog kayobe overcloud host configure
 
-  on-head lsof -iTCP:4369 -sTCP:LISTEN >/tmp/epmd.listen.log
+  on-all '/opt/kayobe/venvs/kolla-ansible/bin/pip install docker-compose'
+
+  networkSetConf vhost
+  dockerFixLocalRegistry
+  source venvs/kolla-ansible/bin/activate
+#    tlog ansible-playbook -i /etc/kayobe/inventory \
+#           -e config_file=/etc/kayobe/tf.yml \
+#           -e ansible_python_interpreter=/opt/kayobe/venvs/kolla-ansible/bin/python \
+#           src/tf-ansible-deployer/playbooks/configure_instances.yml
+    tlog ansible-playbook -i /etc/kayobe/inventory \
+           -e config_file=/etc/kayobe/tf.yml \
+           -e ansible_python_interpreter=/opt/kayobe/venvs/kolla-ansible/bin/python \
+           src/tf-ansible-deployer/playbooks/install_contrail.yml
+  deactivate
+  sed -i "s/common_interface: .*/common_interface: vhost0/" /etc/kayobe/inventory/group_vars/compute/network-interfaces
+
+  ###
+  ## Start hack for two rabbits using common epmd
+  #
+  #on-head lsof -iTCP:4369 -sTCP:LISTEN >/tmp/epmd.listen.log
   on-head docker stop config_database_rabbitmq_1
 
+  source ~/kayobe.rc
   tlog kayobe overcloud service deploy
 
+  ###
+  ## Finnish Hack for two rabbits using common epmd
+  #
   on-head docker start config_database_rabbitmq_1
-  on-head lsof -iTCP:4369 -sTCP:LISTEN >>/tmp/epmd.listen.log
+  #on-head lsof -iTCP:4369 -sTCP:LISTEN >>/tmp/epmd.listen.log
 
-  # hacks
+  # hacks for tungsten and nova_compute
   on-compute 'docker exec  -u root nova_compute alternatives --set python /usr/bin/python3'
-  networkSetConf
+  networkSetConf vhost
 
   # resources
   #cp-head /etc/kolla/*-openrc.sh /etc/kolla/kolla-toolbox/
