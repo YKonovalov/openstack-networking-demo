@@ -201,6 +201,6 @@ openstackResourcesAddHeat(){
 
 time (
   . /etc/kolla/admin-openrc.sh
-#  time openstackResourcesAddImageFlavor
+  time openstackResourcesAddImageFlavor
   time openstackResourcesAddHeat
 )
