@@ -1,0 +1,16 @@
+#!/bin/sh
+
+if [ "$1" != "yes" ]; then
+ exit 0
+fi
+CONTRAIL_CONTAINER_TAG=${CONTRAIL_CONTAINER_TAG:-dev}
+. /root/tfbuild.env
+
+docker rm -f tf-dev-env-registry
+
+docker rm $(docker ps -a -q)
+
+docker image ls|grep localhost:5001|awk '{print $3}'|xargs docker image rm
+docker image ls|grep localhost:5001|grep $CONTRAIL_CONTAINER_TAG|awk '{print $1":"$2}'|xargs docker rmi
+docker image ls|grep $CONTRAIL_CONTAINER_TAG|awk '{print $1":"$2}'|xargs docker rmi
+docker image prune -f

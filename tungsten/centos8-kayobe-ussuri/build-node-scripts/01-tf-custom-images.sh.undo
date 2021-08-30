@@ -1,0 +1,18 @@
+#!/bin/sh
+if [ "$1" != "yes" ]; then
+ exit 0
+fi
+
+images="
+centos:7
+centos:7.4.1708
+ubuntu:18.04
+"
+
+set +e
+for image in $images; do
+  for flavor in "" base vanilla; do
+   docker rmi $flavor$image
+  done
+done
+docker rmi sandboxcentos:7
