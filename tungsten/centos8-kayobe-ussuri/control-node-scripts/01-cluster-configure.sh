@@ -10,6 +10,7 @@ resolve_host() {
 }
 
 head_ip=$(resolve_host head0)
+
 rhost="$(nodeattr -n build|head -1)"
 rport="$(nodeattr -v build0 docker_registry_listen_port)"
 
@@ -108,11 +109,6 @@ EOF
 cat > /etc/kayobe/kolla.yml << EOF
 openstack_release: $OS
 openstack_branch: stable/$OS
-
-tf_docker_registry: $rhost:$rport
-tf_namespace:
-tf_tag: dev
-
 #kolla_ansible_source_url: https://github.com/tungstenfabric/tf-kolla-ansible.git
 kolla_ansible_source_url: https://github.com/YKonovalov/tf-kolla-ansible
 kolla_ansible_source_version: contrail/$OS
@@ -128,17 +124,9 @@ kolla_enable_heat: true
 EOF
 
 cat > /etc/kayobe/kolla/globals.yml << EOF
-heat_opencontrail_init_image_full:               tungstenfabric/contrail-openstack-heat-init:latest
-ironic_notification_manager_image_full:          tungstenfabric/contrail-openstack-ironic-notification-manager:latest
-neutron_opencontrail_init_image_full:            tungstenfabric/contrail-openstack-neutron-init:latest
-neutron_opencontrail_ml2_init_image_full:        tungstenfabric/contrail-openstack-neutron-ml2-init:latest
-nova_compute_opencontrail_init_image_full:       tungstenfabric/contrail-openstack-compute-init:latest
-
-heat_opencontrail_init_image_full:         "{{ tf_docker_registry ~ '/' if tf_docker_registry else '' }}{{ tf_namespace ~ '/' if tf_namespace else '' }}contrail-openstack-heat-init:{{ tf_tag }}"
-ironic_notification_manager_image_full:    "{{ tf_docker_registry ~ '/' if tf_docker_registry else '' }}{{ tf_namespace ~ '/' if tf_namespace else '' }}contrail-openstack-ironic-notification-manager:{{ tf_tag }}"
-neutron_opencontrail_init_image_full:      "{{ tf_docker_registry ~ '/' if tf_docker_registry else '' }}{{ tf_namespace ~ '/' if tf_namespace else '' }}contrail-openstack-neutron-init:{{ tf_tag }}"
-neutron_opencontrail_ml2_init_image_full:  "{{ tf_docker_registry ~ '/' if tf_docker_registry else '' }}{{ tf_namespace ~ '/' if tf_namespace else '' }}contrail-openstack-neutron-ml2-init:{{ tf_tag }}"
-nova_compute_opencontrail_init_image_full: "{{ tf_docker_registry ~ '/' if tf_docker_registry else '' }}{{ tf_namespace ~ '/' if tf_namespace else '' }}contrail-openstack-compute-init:{{ tf_tag }}"
+tf_tag: "dev"
+tf_namespace: ""
+tf_docker_registry: "$rhost:$rport"
 
 contrail_ca_file: /etc/contrail/ssl/certs/ca-cert.pem
 contrail_dm_integration: True
@@ -157,7 +145,7 @@ opencontrail_webui_ip:      $head_ip
 customize_etc_hosts: False
 computes_need_external_bridge: False
 
-nova_compute_virt_type: qemu
+#nova_compute_virt_type: qemu
 openstack_service_workers: "1"
 EOF
 
@@ -190,11 +178,13 @@ cat >> /etc/kayobe/tf.yml << EOF
     ip: $(resolve_host $name)
     roles:
       vrouter:
+      openstack_compute:
 EOF
 done
 
 cat >> /etc/kayobe/tf.yml << EOF
 global_configuration:
+#  CONTAINER_REGISTRY: tungstenfabric
   CONTAINER_REGISTRY: $rhost:$rport
   REGISTRY_PRIVATE_INSECURE: True
 contrail_configuration:
@@ -207,6 +197,11 @@ kolla_config:
   kolla_passwords:
     keystone_admin_password: admin
     metadata_secret: contrail
+#  customize:
+#    nova.conf: |
+#      [libvirt]
+#      virt_type=qemu
+#      cpu_mode=none
   kolla_globals:
     neutron_plugin_agent: opencontrail
     enable_opencontrail_rbac: no

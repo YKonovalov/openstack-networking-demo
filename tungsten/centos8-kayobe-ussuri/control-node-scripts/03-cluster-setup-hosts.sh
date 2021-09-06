@@ -15,8 +15,10 @@ time (
   source ~/kayobe.rc
   tlog kayobe   control host bootstrap
   tlog kayobe overcloud host configure
+  #pdsh -g compute ip r r default via 172.16.0.1 dev vhost0
 
   echo "FIXME3: should be installed by 'kayobe overcloud host configure'"
   pdsh -g head,compute '/opt/kayobe/venvs/kolla-ansible/bin/pip install docker-compose'
   pdsh -a 'timedatectl set-timezone Europe/Moscow'
+
 )

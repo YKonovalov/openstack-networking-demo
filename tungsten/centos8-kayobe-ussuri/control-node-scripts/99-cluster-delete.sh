@@ -2,7 +2,7 @@
 
 unset SSH_AUTH_SOCK
 
-#rm -rf src venvs /etc/kayobe /etc/kolla /opt/kayobe /etc/contrail/
+rm -rf ~/src ~/venvs /etc/kayobe /etc/kolla /opt/kayobe /etc/contrail/
 pdsh -g head,compute 'docker ps -q|xargs docker rm -f -v'
 pdsh -g head,compute 'docker volume prune -f'
 pdsh -g head,compute 'docker image ls -q|xargs docker image rm -f'
