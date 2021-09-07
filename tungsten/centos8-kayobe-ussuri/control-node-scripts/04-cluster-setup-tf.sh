@@ -3,8 +3,8 @@
 unset SSH_AUTH_SOCK
 
 dockerFixLocalRegistry() {
-rhost="$(nodeattr -n build|head -1)"
-rport="$(nodeattr -v build0 docker_registry_listen_port)"
+  rhost="$(nodeattr -n build|head -1)"
+  rport="$(nodeattr -v build0 docker_registry_listen_port)"
 cat > /tmp/daemon.json << EOF
 {
     "insecure-registries": [
@@ -38,9 +38,6 @@ time (
     -e ansible_python_interpreter=/opt/kayobe/venvs/kolla-ansible/bin/python \
     ~/src/tf-ansible-deployer/playbooks/install_contrail.yml
   deactivate
-
-  echo "FIXME5: Stopping tungsten rabbit to free epmd (TCP:4369) port, otherwise kayobe will fail"
-  pdsh -g head docker stop config_database_rabbitmq_1
 
   echo "FIXME2: Change iface name to vhost0, otherwise kolla-ansible will fail to find host ip"
   sed -i "s/common_interface: .*/common_interface: vhost0/" /etc/kayobe/inventory/group_vars/compute/network-interfaces

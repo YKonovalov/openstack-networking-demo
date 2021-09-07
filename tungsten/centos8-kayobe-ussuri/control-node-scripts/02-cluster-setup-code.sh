@@ -1,9 +1,13 @@
 #!/bin/sh
 
-###
-## OpenStack version codename to install (e.g. train for example)
-#
-OS=ussuri
+chost="$(nodeattr -n control|head -1)"
+os="$(nodeattr -v $chost os)"
+tf="$(nodeattr -v $chost tf)"
+virt="$(nodeattr -v $chost virt)"
+
+os="${os:-ussuri}"
+tf="${tf:-dev}"
+virt="${virt:-kvm}"
 
 unset SSH_AUTH_SOCK
 
@@ -21,7 +25,7 @@ cd
 mkdir src
 
 [ -d ~/src/kayobe ] || (
- git clone https://github.com/openstack/kayobe.git -b stable/$OS ~/src/kayobe
+ git clone https://github.com/openstack/kayobe.git -b stable/$os ~/src/kayobe
  empty_match="\(^#\|---\|^$\|workaround_ansible_issue_8743: yes\)"
  sed -i "/$empty_match/ d" ~/src/kayobe/ansible/roles/kolla-ansible/templates/globals.yml.j2
  sed -i "/neutron_plugin_agent/ d" ~/src/kayobe/ansible/roles/kolla-ansible/templates/globals.yml.j2
@@ -52,7 +56,7 @@ export KOLLA_CONFIG_PATH="/etc/kolla"
 export KAYOBE_DATA_FILES_PATH="$(realpath ~/src/kayobe          )"
 export KOLLA_SOURCE_PATH="$(realpath      ~/src/kolla-ansible   )"
 
-export KAYOBE_VENV_PATH="$(realpath      ~/venvs/kayobe         )"
+export KAYOBE_VENV_PATH="$(realpath       ~/venvs/kayobe        )"
 export KOLLA_VENV_PATH="$(realpath        ~/venvs/kolla-ansible )"
 
 source "\$KAYOBE_VENV_PATH/bin/activate"

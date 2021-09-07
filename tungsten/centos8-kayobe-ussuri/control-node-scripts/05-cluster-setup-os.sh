@@ -7,6 +7,9 @@ tlog() {
 }
 
 time (
+  echo "FIXME5: Stopping tungsten rabbit to free epmd (TCP:4369) port, otherwise kayobe will fail"
+  pdsh -g head docker stop config_database_rabbitmq_1
+
   source ~/kayobe.rc
   tlog kayobe overcloud service deploy
 

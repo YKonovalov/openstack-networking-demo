@@ -19,6 +19,6 @@ time (
 
   echo "FIXME3: should be installed by 'kayobe overcloud host configure'"
   pdsh -g head,compute '/opt/kayobe/venvs/kolla-ansible/bin/pip install docker-compose'
+  echo "FIXME4: should be set corectly by kayobe"
   pdsh -a 'timedatectl set-timezone Europe/Moscow'
-
 )

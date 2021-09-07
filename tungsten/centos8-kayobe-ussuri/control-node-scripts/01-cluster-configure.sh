@@ -1,25 +1,25 @@
 #!/bin/sh
 
-###
-## OpenStack version codename to install (e.g. train for example)
-#
-OS=ussuri
-
 resolve_host() {
   getent hosts $1|head -1|cut -d ' ' -f1
 }
 
-head_ip=$(resolve_host head0)
-
 rhost="$(nodeattr -n build|head -1)"
-rport="$(nodeattr -v build0 docker_registry_listen_port)"
+rport="$(nodeattr -v $rhost docker_registry_listen_port)"
 
-mkdir -p /etc/kayobe/inventory/group_vars/{controllers,compute,overcloud} /etc/kayobe/kolla/config
+chost="$(nodeattr -n control|head -1)"
+os="$(nodeattr -v $chost os)"
+tf="$(nodeattr -v $chost tf)"
+virt="$(nodeattr -v $chost virt)"
 
-#cat > /etc/kayobe/kolla/config/nova.conf << EOF
-#[libvirt]
-#virt_type=qemu
-#EOF
+os="${os:-ussuri}"
+tf="${tf:-dev}"
+virt="${virt:-kvm}"
+
+hhost="$(nodeattr -n head|head -1)"
+head_ip=$(resolve_host $hhost)
+
+mkdir -p /etc/kayobe/inventory/group_vars/{controllers,compute,overcloud} /etc/kayobe/kolla
 
 cat > /etc/kayobe/inventory/groups << EOF
 [seed]
@@ -89,13 +89,7 @@ common_vip_address: $head_ip
 EOF
 
 cat > /etc/kayobe/dns.yml << EOF
-resolv_is_managed: false
-#resolv_nameservers:
-#- 8.8.8.8
-#- 8.8.4.4
-#resolv_domain: example.com
-#resolv_search:
-#- kayobe.example.com
+resolv_is_managed: False
 EOF
 
 cat > /etc/kayobe/hosts-vars.yml << EOF
@@ -107,11 +101,11 @@ compute_lvm_groups: []
 EOF
 
 cat > /etc/kayobe/kolla.yml << EOF
-openstack_release: $OS
-openstack_branch: stable/$OS
+openstack_release: $os
+openstack_branch: stable/$os
 #kolla_ansible_source_url: https://github.com/tungstenfabric/tf-kolla-ansible.git
 kolla_ansible_source_url: https://github.com/YKonovalov/tf-kolla-ansible
-kolla_ansible_source_version: contrail/$OS
+kolla_ansible_source_version: contrail/$os
 #kolla_ansible_user: root
 kolla_ansible_custom_passwords:
  keystone_admin_password: admin
@@ -124,18 +118,17 @@ kolla_enable_heat: true
 EOF
 
 cat > /etc/kayobe/kolla/globals.yml << EOF
-tf_tag: "dev"
+tf_tag: "$tf"
 tf_namespace: ""
 tf_docker_registry: "$rhost:$rport"
 
 contrail_ca_file: /etc/contrail/ssl/certs/ca-cert.pem
-contrail_dm_integration: True
+contrail_dm_integration: False
 enable_opencontrail_rbac: False
 enable_opencontrail_trunk: True
 
 #metadata_secret: contrail
 neutron_plugin_agent: opencontrail
-#neutron_plugin_agent: opencontrail-ml2
 neutron_fwaas_version: v2
 
 opencontrail_api_server_ip: $head_ip
@@ -145,7 +138,7 @@ opencontrail_webui_ip:      $head_ip
 customize_etc_hosts: False
 computes_need_external_bridge: False
 
-#nova_compute_virt_type: qemu
+nova_compute_virt_type: $virt
 openstack_service_workers: "1"
 EOF
 
@@ -189,19 +182,14 @@ global_configuration:
   REGISTRY_PRIVATE_INSECURE: True
 contrail_configuration:
   CLOUD_ORCHESTRATOR: openstack
-  OPENSTACK_VERSION: $OS
-  CONTRAIL_VERSION: dev
+  OPENSTACK_VERSION: $os
+  CONTRAIL_VERSION: $tf
   AUTH_MODE: keystone
   KEYSTONE_AUTH_URL_VERSION: /v3
 kolla_config:
   kolla_passwords:
     keystone_admin_password: admin
     metadata_secret: contrail
-#  customize:
-#    nova.conf: |
-#      [libvirt]
-#      virt_type=qemu
-#      cpu_mode=none
   kolla_globals:
     neutron_plugin_agent: opencontrail
     enable_opencontrail_rbac: no
