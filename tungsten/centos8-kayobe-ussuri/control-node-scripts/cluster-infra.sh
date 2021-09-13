@@ -34,7 +34,8 @@ pdcp -a -X control /etc/genders /etc/genders
 pdsh -a -X control 'hostname -f'
 
 echo "Accepting all ssh hostkeys"
-PDSH_SSH_ARGS_APPEND='-o StrictHostKeyChecking=no'
+#PDSH_SSH_ARGS_APPEND='-o StrictHostKeyChecking=no'
+echo -e "host *\n  StrictHostKeyChecking no\n" >> ~/.ssh/config
 pdsh -a date
-
+echo "Setting hostnames"
 pdsh -a 'hostnamectl set-hostname %h'

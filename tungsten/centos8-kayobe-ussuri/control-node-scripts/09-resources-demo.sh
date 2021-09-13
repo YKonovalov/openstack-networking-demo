@@ -14,21 +14,75 @@ else
   C=
 fi
 
+key="${key:-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDhnCbtsX8dsmLp5i2G9lDAsKM+05SqIh/kcer0sbv7K YKonovalov@gmail.com}"
+key="$(cat /root/.ssh/id_rsa.pub)"
+
 cat > /tmp/heat.yaml << EOF
 heat_template_version: 2018-08-31
 description: SDN demo set of resources heat template
 resources:
   public:
-    type: OS::Neutron::Net
+    type: OS::ContrailV2::VirtualNetwork
     properties:
       name: public
-      value_specs: {"router:external": true}
-  public-v4:
-    type: OS::Neutron::Subnet
+      router_external: true
+      is_shared: true
+      network_policy_refs:
+      - get_resource: permissive
+      network_policy_refs_data:
+      - network_policy_refs_data_sequence:
+          network_policy_refs_data_sequence_major: 0
+          network_policy_refs_data_sequence_minor: 0
+      network_ipam_refs:
+      - get_resource: space
+      network_ipam_refs_data:
+      - network_ipam_refs_data_ipam_subnets:
+        - network_ipam_refs_data_ipam_subnets_subnet_name: public-v4
+          network_ipam_refs_data_ipam_subnets_subnet:
+            network_ipam_refs_data_ipam_subnets_subnet_ip_prefix: $(getent hosts head0|head -1|cut -d ' ' -f1|awk -F. 'OFS="." {print $1,$2,$4,"0"}')
+            network_ipam_refs_data_ipam_subnets_subnet_ip_prefix_len: 24
+  space:
+    type: OS::ContrailV2::NetworkIpam
     properties:
-      name: public-v4
-      network_id: { get_resource: public}
-      cidr: $(getent hosts head0|head -1|cut -d ' ' -f1|awk -F. 'OFS="." {print $1,$2,$4,"0/24"}')
+      name: space
+  permissive:
+    type: OS::ContrailV2::NetworkPolicy
+    properties:
+      name: permissive
+      network_policy_entries:
+        network_policy_entries_policy_rule:
+        - network_policy_entries_policy_rule_direction: <>
+          network_policy_entries_policy_rule_protocol: any
+          network_policy_entries_policy_rule_action_list:
+            network_policy_entries_policy_rule_action_list_simple_action: pass
+          network_policy_entries_policy_rule_src_addresses:
+          - network_policy_entries_policy_rule_src_addresses_subnet:
+              network_policy_entries_policy_rule_src_addresses_subnet_ip_prefix: "0.0.0.0"
+              network_policy_entries_policy_rule_src_addresses_subnet_ip_prefix_len: 0
+          network_policy_entries_policy_rule_src_ports:
+          - network_policy_entries_policy_rule_src_ports_start_port: -1
+            network_policy_entries_policy_rule_src_ports_end_port: -1
+          network_policy_entries_policy_rule_dst_addresses:
+          - network_policy_entries_policy_rule_dst_addresses_virtual_network: "any"
+          network_policy_entries_policy_rule_dst_ports:
+          - network_policy_entries_policy_rule_dst_ports_start_port: -1
+            network_policy_entries_policy_rule_dst_ports_end_port: -1
+  fabric:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name: fabric
+      rules:
+      - direction: ingress
+        ethertype: IPv4
+        remote_ip_prefix: 0.0.0.0/0
+      - direction: egress
+        ethertype: IPv4
+        remote_ip_prefix: 0.0.0.0/0
+  common:
+    type: OS::ContrailV2::FloatingIpPool
+    properties:
+      name: common
+      virtual_network: {get_resource: public}
 
   internal:
     type: OS::Neutron::Net
@@ -42,17 +96,17 @@ resources:
       cidr: 10.0.0.0/24
 
   fip-int-a:
-    depends_on: public
+    depends_on: [public,common]
     type: OS::Neutron::FloatingIP
     properties:
       floating_network: { get_resource: public }
   fip-int-b:
-    depends_on: public
+    depends_on: [public,common]
     type: OS::Neutron::FloatingIP
     properties:
       floating_network: { get_resource: public }
   fip-int-c:
-    depends_on: public
+    depends_on: [public,common]
     type: OS::Neutron::FloatingIP
     properties:
       floating_network: { get_resource: public }
@@ -61,14 +115,20 @@ resources:
     type: OS::Neutron::Port
     properties:
       network: {get_resource: internal}
+      security_groups:
+      - { get_resource: fabric }
   port-int-b:
     type: OS::Neutron::Port
     properties:
       network: {get_resource: internal}
+      security_groups:
+      - { get_resource: fabric }
   port-int-c:
     type: OS::Neutron::Port
     properties:
       network: {get_resource: internal}
+      security_groups:
+      - { get_resource: fabric }
 
   publiciers:
     type: OS::Nova::ServerGroup
@@ -84,46 +144,52 @@ resources:
   key:
     type: OS::Nova::KeyPair
     properties:
-      name: mykey
-      public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDhnCbtsX8dsmLp5i2G9lDAsKM+05SqIh/kcer0sbv7K YKonovalov@gmail.com
+      name: stack
+      public_key: $key
 
   pub-a:
     type: OS::Nova::Server
     properties:
       name: pub-a
-      image: cirros051
+      image: cirros
       flavor: m1.tiny
       key_name: { get_resource: key }
       user_data_format: RAW
       user_data: $C
       networks:
       - network: { get_resource: public }
+      security_groups:
+      - { get_resource: fabric }
       scheduler_hints:
         group: { get_resource: publiciers }
   pub-b:
     type: OS::Nova::Server
     properties:
       name: pub-b
-      image: cirros051
+      image: cirros
       flavor: m1.tiny
       key_name: { get_resource: key }
       user_data_format: RAW
       user_data: $C
       networks:
       - network: { get_resource: public }
+      security_groups:
+      - { get_resource: fabric }
       scheduler_hints:
         group: { get_resource: publiciers }
   pub-c:
     type: OS::Nova::Server
     properties:
       name: pub-c
-      image: fedora33
+      image: fedora
       flavor: m1.tiny
       key_name: { get_resource: key }
       user_data_format: RAW
       user_data: $C
       networks:
       - network: { get_resource: public }
+      security_groups:
+      - { get_resource: fabric }
       scheduler_hints:
         group: { get_resource: publiciers }
 
@@ -134,7 +200,7 @@ resources:
      - fip-int-a
     properties:
       name: int-a
-      image: cirros051
+      image: cirros
       flavor: m1.tiny
       key_name: { get_resource: key }
       user_data_format: RAW
@@ -152,7 +218,7 @@ resources:
      - fip-int-b
     properties:
       name: int-b
-      image: cirros051
+      image: cirros
       flavor: m1.tiny
       key_name: { get_resource: key }
       user_data_format: RAW
@@ -169,7 +235,7 @@ resources:
      - fip-int-c
     properties:
       name: int-c
-      image: fedora33
+      image: fedora
       flavor: m1.tiny
       key_name: { get_resource: key }
       user_data_format: RAW
@@ -179,28 +245,13 @@ resources:
         floating_ip: { get_resource: fip-int-c }
       scheduler_hints:
         group: { get_resource: internals }
-
 outputs:
   server_networks:
     description: The networks of the deployed server
-    value: { get_attr: [pub-a, networks] }
+    value: { get_attr: [public, show] }
 EOF
 
-openstackResourcesAddImageFlavor(){
-  openstack service list
-  curl -OL --progress http://download.cirros-cloud.net/0.5.1/cirros-0.5.1-x86_64-disk.img
-  cat cirros-0.5.1-x86_64-disk.img|openstack image create cirros051 --disk-format qcow2 --public --container-format bare
-  curl -OL --progress https://mirror.yandex.ru/fedora/linux/releases/33/Cloud/x86_64/images/Fedora-Cloud-Base-33-1.2.x86_64.qcow2
-  cat Fedora-Cloud-Base-33-1.2.x86_64.qcow2|openstack image create fedora33 --disk-format qcow2 --public --container-format bare
-  openstack flavor create --public m1.tiny --id auto --ram 1024 --disk 10
-}
+source ~/kayobe.env
+source "$KOLLA_CONFIG_PATH/admin-openrc.sh"
 
-openstackResourcesAddHeat(){
-  openstack stack create -t /tmp/heat.yaml tf-demo
-}
-
-time (
-  . /etc/kolla/admin-openrc.sh
-  time openstackResourcesAddImageFlavor
-  time openstackResourcesAddHeat
-)
+openstack stack create --wait -t /tmp/heat.yaml demo

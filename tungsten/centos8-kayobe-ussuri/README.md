@@ -6,8 +6,8 @@ tungstenfabric + openstack installation scripts (using tf-ansible-deployer and k
 
   - one build server 64G RAM
   - one control node 2G RAM
-  - one head node 64G RAM
-  - tree compute node 8G RAM
+  - one or three head node 64G RAM
+  - tree or more compute node 8G RAM
 
 ## configure
 
@@ -23,10 +23,12 @@ __/etc/hosts__:
 10.0.1.7 compute2
 ```
 
+For hosts with role control you can optionally specify openstack (ussuri,victoria or wallaby), tungstenfabric versions as well as virtualization type (kvm or qemu). For example: **os=wallaby,tf=dev,virt=kvm**
+
 __/etc/genders__:
 ```
 build0 build,pdsh_all_skip,docker_registry_listen_port=5001
-control0 control
+control0 control,os=ussuri,tf=dev,virt=qemu
 head0 head
 compute0 compute
 compute1 compute

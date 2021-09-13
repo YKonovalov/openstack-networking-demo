@@ -1,5 +1,7 @@
 #!/bin/sh
 
+. ~/kayobe.env
+
 resolve_host() {
   getent hosts $1|head -1|cut -d ' ' -f1
 }
@@ -19,9 +21,9 @@ virt="${virt:-kvm}"
 hhost="$(nodeattr -n head|head -1)"
 head_ip=$(resolve_host $hhost)
 
-mkdir -p /etc/kayobe/inventory/group_vars/{controllers,compute,overcloud} /etc/kayobe/kolla
+mkdir -p "$KAYOBE_CONFIG_PATH/inventory/group_vars/"{controllers,compute,overcloud} "$KAYOBE_CONFIG_PATH/kolla"
 
-cat > /etc/kayobe/inventory/groups << EOF
+cat > "$KAYOBE_CONFIG_PATH/inventory/groups" << EOF
 [seed]
 [controllers]
 [compute]
@@ -35,6 +37,10 @@ seed
 controllers
 compute
 
+[ntp:children]
+seed
+overcloud
+
 # we don't use network group yet, but playbooks fail unless we define it:
 [network:children]
 controllers
@@ -42,7 +48,7 @@ controllers
 [monitoring]
 EOF
 
-cat > /etc/kayobe/inventory/hosts << EOF
+cat > "$KAYOBE_CONFIG_PATH/inventory/hosts" << EOF
 localhost ansible_connection=local config_file=../tf.yml
 [controllers]
 `nodeattr -n head   |awk '{print $0, "ansible_host="$0}'`
@@ -50,20 +56,20 @@ localhost ansible_connection=local config_file=../tf.yml
 `nodeattr -n compute|awk '{print $0, "ansible_host="$0}'`
 EOF
 
-cat > /etc/kayobe/inventory/group_vars/controllers/network-interfaces << EOF
+cat > "$KAYOBE_CONFIG_PATH/inventory/group_vars/controllers/network-interfaces" << EOF
 common_interface: eth0
 common_bootproto: static
 EOF
-cat > /etc/kayobe/inventory/group_vars/compute/network-interfaces << EOF
+cat > "$KAYOBE_CONFIG_PATH/inventory/group_vars/compute/network-interfaces" << EOF
 common_interface: vhost0
 common_bootproto: static
 EOF
 
-cat > /etc/kayobe/inventory/group_vars/overcloud/ansible_python_interpreter << EOF
+cat > "$KAYOBE_CONFIG_PATH/inventory/group_vars/overcloud/ansible_python_interpreter" << EOF
 ansible_python_interpreter: "{{ virtualenv_path }}/kayobe/bin/python"
 EOF
 
-cat >  /etc/kayobe/networks.yml << EOF
+cat >  "$KAYOBE_CONFIG_PATH/networks.yml" << EOF
 admin_oc_net_name: common
 oob_oc_net_name: common
 provision_oc_net: common
@@ -79,20 +85,30 @@ storage_mgmt_net_name: common
 inspection_net_name: common
 EOF
 
-cat >  /etc/kayobe/networks-vars.yml << EOF
+cat >  "$KAYOBE_CONFIG_PATH/networks-vars.yml" << EOF
 common_cidr: $(ip -j r s dev eth0 scope link|jq -r '.[0]|.dst')
 common_gateway: $(ip -j r s dev eth0 default|jq -r '.[0]|.gateway')
 common_ips:
 `nodeattr -n "head||compute"|while read name; do echo " $name: $(resolve_host $name)"; done`
-common_fqdn: head0.
+common_fqdn: head0
 common_vip_address: $head_ip
 EOF
 
-cat > /etc/kayobe/dns.yml << EOF
+cat > "$KAYOBE_CONFIG_PATH/dns.yml" << EOF
 resolv_is_managed: False
 EOF
 
-cat > /etc/kayobe/hosts-vars.yml << EOF
+cat > "$KAYOBE_CONFIG_PATH/time.yml" << EOF
+timezone: Europe/Moscow
+chrony_ntp_servers:
+  - server: pool.ntp.org
+    type: pool
+    options:
+      - option: maxsources
+        val: 3
+EOF
+
+cat > "$KAYOBE_CONFIG_PATH/hosts-vars.yml" << EOF
 disable-glean: true
 docker_storage_driver: overlay
 seed_lvm_groups: []
@@ -100,7 +116,7 @@ controller_lvm_groups: []
 compute_lvm_groups: []
 EOF
 
-cat > /etc/kayobe/kolla.yml << EOF
+cat > "$KAYOBE_CONFIG_PATH/kolla.yml" << EOF
 openstack_release: $os
 openstack_branch: stable/$os
 #kolla_ansible_source_url: https://github.com/tungstenfabric/tf-kolla-ansible.git
@@ -117,7 +133,7 @@ kolla_enable_neutron_provider_networks: False
 kolla_enable_heat: true
 EOF
 
-cat > /etc/kayobe/kolla/globals.yml << EOF
+cat > "$KAYOBE_CONFIG_PATH/kolla/globals.yml" << EOF
 tf_tag: "$tf"
 tf_namespace: ""
 tf_docker_registry: "$rhost:$rport"
@@ -143,14 +159,14 @@ openstack_service_workers: "1"
 EOF
 
 
-cat > /etc/kayobe/tf.yml << EOF
+cat > "$KAYOBE_CONFIG_PATH/tf.yml" << EOF
 provider_config:
   bms:
     domainsuffix: local
 instances:
 EOF
 for name in `nodeattr -n head`; do
-cat >> /etc/kayobe/tf.yml << EOF
+cat >> "$KAYOBE_CONFIG_PATH/tf.yml" << EOF
   $name:
     provider: bms
     ip: $(resolve_host $name)
@@ -165,7 +181,7 @@ cat >> /etc/kayobe/tf.yml << EOF
 EOF
 done
 for name in `nodeattr -n compute`; do
-cat >> /etc/kayobe/tf.yml << EOF
+cat >> "$KAYOBE_CONFIG_PATH/tf.yml" << EOF
   $name:
     provider: bms
     ip: $(resolve_host $name)
@@ -175,7 +191,7 @@ cat >> /etc/kayobe/tf.yml << EOF
 EOF
 done
 
-cat >> /etc/kayobe/tf.yml << EOF
+cat >> "$KAYOBE_CONFIG_PATH/tf.yml" << EOF
 global_configuration:
 #  CONTAINER_REGISTRY: tungstenfabric
   CONTAINER_REGISTRY: $rhost:$rport
@@ -199,7 +215,7 @@ kolla_config:
     enable_haproxy: False
 EOF
 
-cat > /etc/kayobe/kolla-disabled.yml << EOF
+cat > "$KAYOBE_CONFIG_PATH/kolla-disabled.yml" << EOF
 kolla_enable_aodh: false
 kolla_enable_barbican: false
 kolla_enable_blazar: false
