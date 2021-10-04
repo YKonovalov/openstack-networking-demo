@@ -1,7 +1,0 @@
-gateway = "192.168.191.1"
-netmask = "255.255.255.0"
-dhcp_pool_start_address = "192.168.191.2"
-dhcp_pool_end_address   = "192.168.191.126"
-static_ip_pool_start_address = "192.168.191.159"
-static_ip_pool_end_address = "192.168.191.254"
-original_address   = "192.168.191.0/24"

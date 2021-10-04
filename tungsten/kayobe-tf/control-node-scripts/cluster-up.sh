@@ -14,7 +14,7 @@ while true; do
     grep ok= [0-9]*.log|grep '\(unreachable\|failed\)=[1-9]'
     echo --------
     break
-  elif ! pgrep -f 'sh cloud-node-scripts/cluster-do-setup.sh' >/dev/null; then
+  elif ! pgrep -f 'control-node-scripts/cluster-do-setup.sh' >/dev/null; then
     echo "ERROR: script exited:"
     cat /tmp/tlog
     grep ok= ~/[0-9]*.log|grep '\(unreachable\|failed\)=[1-9]'

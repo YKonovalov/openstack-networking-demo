@@ -1,4 +1,4 @@
-#!/bin/sh -e
+#!/bin/bash
 set -e
 
 . ~/kayobe.venv
@@ -17,7 +17,7 @@ cat > /tmp/daemon.json << EOF
         "max-size": "50m"
     },
     "mtu": 1500,
-    "storage-driver": "overlay",
+    "storage-driver": "overlay2",
     "storage-opts": []
 }
 EOF
@@ -25,8 +25,12 @@ EOF
   pdsh -g head,compute systemctl restart docker
 }
 
-echo "FIXME4: We should switch to our own docker resistry in kolla as well. Then we can remove this hack."
-dockerFixLocalRegistry
+chost="$(nodeattr -n control|head -1)"
+tfcustom="$(nodeattr -v $chost tfcustom && echo True || echo False)"
+if nodeattr -v $chost tfcustom; then
+  echo "FIXME4: We should switch to our own docker resistry in kolla as well. Then we can remove this hack."
+  dockerFixLocalRegistry
+fi
 
 source ~/kayobe.venv
   kayobe -vvv overcloud host command run --become --command "/opt/kayobe/venvs/kolla-ansible/bin/pip install docker-compose"
@@ -39,7 +43,6 @@ source "$TF_VENV_PATH/bin/activate"
     "$TF_SOURCE_PATH/playbooks/install_contrail.yml"
 deactivate
 
-
 source ~/kayobe.venv
   tf_net="$(kayobe configuration dump --hosts localhost --var tunnel_net_name|jq -r '.[]')"
   echo "FIXME2: Change iface name to vhost0, otherwise kolla-ansible will fail to find host ip"
@@ -49,5 +52,16 @@ source ~/kayobe.venv
   kayobe -v overcloud host command run --become --limit compute --command "docker restart vrouter_provisioner_1"
 deactivate
 
-echo "FIXME2: Change iface name to vhost0, otherwise kolla-ansible will fail to find host ip"
-sed -i "s/common_interface: .*/common_interface: vhost0/" "$KAYOBE_CONFIG_PATH/inventory/group_vars/compute/network-interfaces"
+echo "Wait for vrouter kernel to compile on all nodes"
+while true; do
+  A="$(nodeattr -n "compute"|sort)"
+  B="$(pdsh -g compute 'ip -o r s default dev vhost0'|awk -F: '/default/{print $1}'|sort)"
+  C=`comm -23 <(echo "$A") <(echo "$B")`
+  if [ "$A" == "$B" ]; then
+    break
+  fi
+  echo "Waiting for: "$A
+  echo " already ready: "$B
+  echo " still waiting: "$C
+  sleep 6
+done

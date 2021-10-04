@@ -1,17 +1,23 @@
 #!/bin/bash
 
+unset SSH_AUTH_SOCK
+export PDSH_RCMD_TYPE=ssh
 export PDSH_SSH_ARGS_APPEND='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 
 echo "Wait for cloud-init to finnish"
 cloud-init status --wait
 
-test -f /root/.ssh/id_rsa||ssh-keygen -t rsa -b 4096 -N "" -f /root/.ssh/id_rsa
+if ! [ -f /root/.ssh/id_rsa ]; then
+  #ssh-keygen -t rsa -b 4096 -N "" -f /root/.ssh/id_rsa
+  echo "Please copy common ssh key to /root/.ssh/id_rsa"
+  exit 1
+fi
 ssh-copy-id -o StrictHostKeyChecking=no -i /root/.ssh/id_rsa root@localhost
 
-echo "Waiting for all nodes to become up"
-systemctl restart whatsup-pingd
-time (while ! whatsup -t --up >/dev/null; do sleep 1; echo -n .; done)
-whatsup
+#echo "Waiting for all nodes to become up"
+#systemctl restart whatsup-pingd
+#time (while ! whatsup -t --up >/dev/null; do sleep 1; echo -n .; done)
+#whatsup
 
 echo "Wait for cloud-init to finnish on all nodes"
 while true; do

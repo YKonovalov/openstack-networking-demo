@@ -6,20 +6,31 @@ resolve_host() {
   getent hosts $1|head -1|cut -d ' ' -f1
 }
 
-rhost="$(nodeattr -n build|head -1)"
-rport="$(nodeattr -v $rhost docker_registry_listen_port)"
 
 chost="$(nodeattr -n control|head -1)"
 os="$(nodeattr -v $chost os)"
 tf="$(nodeattr -v $chost tf)"
 virt="$(nodeattr -v $chost virt)"
+iface="$(nodeattr -v $chost iface)"
+tfcustom="$(nodeattr -v $chost tfcustom && echo True || echo False)"
 
-os="${os:-ussuri}"
-tf="${tf:-dev}"
+os="${os:-wallaby}"
+tf="${tf:-latest}"
 virt="${virt:-kvm}"
+iface="${iface:-eth0}"
 
 hhost="$(nodeattr -n head|head -1)"
 head_ip=$(resolve_host $hhost)
+
+tf_docker_registry=
+tf_namespace=
+if [ "$tfcustom" == "True" ]; then
+  rhost="$(nodeattr -n build|head -1)"
+  rport="$(nodeattr -v $rhost docker_registry_listen_port)"
+  tf_docker_registry="$rhost:$rport"
+else
+  tf_namespace=tungstenfabric
+fi
 
 mkdir -p "$KAYOBE_CONFIG_PATH/inventory/group_vars/"{controllers,compute,overcloud} "$KAYOBE_CONFIG_PATH/kolla"
 
@@ -48,6 +59,11 @@ controllers
 [monitoring]
 EOF
 
+cat > "$KAYOBE_CONFIG_PATH/network-allocation.yml" << EOF
+common_ips:
+`nodeattr -n "head||compute"|while read name; do echo " $name: $(resolve_host $name)"; done`
+EOF
+
 cat > "$KAYOBE_CONFIG_PATH/inventory/hosts" << EOF
 localhost ansible_connection=local config_file=../tf.yml
 [controllers]
@@ -57,7 +73,7 @@ localhost ansible_connection=local config_file=../tf.yml
 EOF
 
 cat > "$KAYOBE_CONFIG_PATH/inventory/group_vars/controllers/network-interfaces" << EOF
-common_interface: eth0
+common_interface: $iface
 common_bootproto: static
 EOF
 cat > "$KAYOBE_CONFIG_PATH/inventory/group_vars/compute/network-interfaces" << EOF
@@ -86,16 +102,17 @@ inspection_net_name: common
 EOF
 
 cat >  "$KAYOBE_CONFIG_PATH/networks-vars.yml" << EOF
-common_cidr: $(ip -j r s dev eth0 scope link|jq -r '.[0]|.dst')
-common_gateway: $(ip -j r s dev eth0 default|jq -r '.[0]|.gateway')
-common_ips:
-`nodeattr -n "head||compute"|while read name; do echo " $name: $(resolve_host $name)"; done`
-common_fqdn: head0
+common_cidr: $(ip -j r s dev $iface scope link|jq -r '.[0]|.dst')
+common_gateway: $(ip -j r s dev $iface default|jq -r '.[0]|.gateway')
+common_fqdn: $head_ip
 common_vip_address: $head_ip
 EOF
 
 cat > "$KAYOBE_CONFIG_PATH/dns.yml" << EOF
-resolv_is_managed: False
+resolv_is_managed: True
+resolv_nameservers:
+  - 8.8.8.8
+  - 8.8.4.4
 EOF
 
 cat > "$KAYOBE_CONFIG_PATH/time.yml" << EOF
@@ -117,12 +134,13 @@ compute_lvm_groups: []
 EOF
 
 cat > "$KAYOBE_CONFIG_PATH/kolla.yml" << EOF
+bootstrap_user: "root"
 openstack_release: $os
 openstack_branch: stable/$os
 #kolla_ansible_source_url: https://github.com/tungstenfabric/tf-kolla-ansible.git
 kolla_ansible_source_url: https://github.com/YKonovalov/tf-kolla-ansible
 kolla_ansible_source_version: contrail/$os
-#kolla_ansible_user: root
+kolla_ansible_venv_extra_requirements: [docker-compose]
 kolla_ansible_custom_passwords:
  keystone_admin_password: admin
  metadata_secret: contrail
@@ -135,8 +153,8 @@ EOF
 
 cat > "$KAYOBE_CONFIG_PATH/kolla/globals.yml" << EOF
 tf_tag: "$tf"
-tf_namespace: ""
-tf_docker_registry: "$rhost:$rport"
+tf_namespace: "$tf_namespace"
+tf_docker_registry: "$tf_docker_registry"
 
 contrail_ca_file: /etc/contrail/ssl/certs/ca-cert.pem
 contrail_dm_integration: False
@@ -193,9 +211,8 @@ done
 
 cat >> "$KAYOBE_CONFIG_PATH/tf.yml" << EOF
 global_configuration:
-#  CONTAINER_REGISTRY: tungstenfabric
-  CONTAINER_REGISTRY: $rhost:$rport
-  REGISTRY_PRIVATE_INSECURE: True
+  CONTAINER_REGISTRY: $(echo $tf_docker_registry $tf_namespace|tr ' ' '/')
+  REGISTRY_PRIVATE_INSECURE: $tfcustom
 contrail_configuration:
   CLOUD_ORCHESTRATOR: openstack
   OPENSTACK_VERSION: $os

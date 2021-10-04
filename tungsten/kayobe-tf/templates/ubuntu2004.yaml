@@ -1,0 +1,28 @@
+#cloud-config
+users:
+- default
+- name: ${user}
+  shell: /bin/bash
+  sudo: ALL=(ALL) NOPASSWD:ALL
+  ssh_authorized_keys:
+  - ${sshkey}
+disable_root: false
+ssh:
+  emit_keys_to_console: false
+no_ssh_fingerprints: true
+packages:
+- strace
+- tcpdump
+- bind9-utils
+- tmux
+- git
+- python3-virtualenv
+- jq
+- inotify-tools
+- time
+- pdsh
+runcmd:
+- echo 'setw -g mouse' > /etc/tmux.conf
+- echo "export PDSH_RCMD_TYPE=ssh" >/etc/profile.d/99-pdsh.sh
+- echo "dash dash/sh boolean false" | debconf-set-selections
+- DEBIAN_FRONTEND=noninteractive dpkg-reconfigure dash

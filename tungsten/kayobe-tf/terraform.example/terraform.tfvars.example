@@ -1,0 +1,7 @@
+vcd_user = "user"
+vcd_pass = "password"
+vcd_org  = "10000003-ABC-12345"
+vcd_vdc  = "ABC-12345"
+vcd_url  = "https://vcd.example.cloud/api"
+vcd_allow_unverified_ssl = false
+vcd_max_retry_timeout = 30
