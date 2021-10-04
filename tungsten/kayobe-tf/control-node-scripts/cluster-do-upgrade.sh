@@ -2,6 +2,9 @@
 
 D=`dirname $0`
 
+os=
+newos=
+
 if [ -f ~/kayobe.env ]; then
   os="$(nodeattr -v $chost os)"
   os="${os:-wallaby}"
@@ -20,8 +23,40 @@ if [ -f ~/kayobe.env ]; then
   sed -i "s/os=$os/os=$newos/" /etc/genders
   tar cf $os.logs.tar /root/*.log /tmp/tlog
   (. ~/kayobe.env; rm -rf "$SRC" "$VENVS")
-  sh "$D/cluster-do-setup.sh"
 else
   echo "No previous version found"
   exit 1
 fi
+
+S="
+01-env.sh
+02-configure.sh
+03-installer.sh
+04-control-host-bootstrap.sh
+05-overcloud-host.sh
+06-tf.sh
+07-overcloud-service-upgrade.sh
+"
+
+unset SSH_AUTH_SOCK
+
+dolog(){
+  cmd="bash "$D/$1" 2>&1 | tee "$(basename -s .sh "$1").$newos$2.log""
+  \time -f "%E %C (exit code: %x)" -a -o /tmp/tlog sh -eo pipefail -c "$cmd"
+}
+
+mv /tmp/tlog /tmp/tlog.$os || rm -f /tmp/tlog
+for s in $S; do
+ if ! dolog $s; then
+   e=$?
+   echo "ERROR: $s exits with error code: $e" >&2
+   echo "Retrying one more time..."
+   if ! dolog $s ".retry"; then
+     e=$?
+     echo "FATAL: $s exits with error code second time: $e" >&2
+     exit $e
+   fi
+ fi
+done
+
+cat /tmp/tlog

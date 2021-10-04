@@ -1,0 +1,12 @@
+hosts
+genders
+.terraform/
+terraform.tfstate*
+versions.tf
+*.tfvars
+.terraform.tfstate.lock.info
+terraform.tfvars*
+terraform.*/
+!terraform.example/
+id_rsa
+id_rsa.pub
