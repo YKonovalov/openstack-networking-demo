@@ -7,7 +7,6 @@ ME=`basename $0`
 LOGD="$ME-$ID"
 mkdir -p "$LOGD"
 
-exit
 S="
 01-env.sh
 02-configure.sh
