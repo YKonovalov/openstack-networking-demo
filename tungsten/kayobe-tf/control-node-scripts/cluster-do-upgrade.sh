@@ -1,6 +1,10 @@
 #!/bin/sh
 
 D=`dirname $0`
+ID=`date +%Y%m%d%H%M`
+ME=`basename $0`
+LOGD="$ME-$ID"
+mkdir -p "$LOGD"
 
 os=
 newos=
@@ -41,7 +45,7 @@ S="
 unset SSH_AUTH_SOCK
 
 dolog(){
-  cmd="bash "$D/$1" 2>&1 | tee "$(basename -s .sh "$1").$newos$2.log""
+  cmd="bash "$D/$1" 2>&1 | tee "$LOGD/$(basename -s .sh "$1").$newos$2.log""
   \time -f "%E %C (exit code: %x)" -a -o /tmp/tlog sh -eo pipefail -c "$cmd"
 }
 
