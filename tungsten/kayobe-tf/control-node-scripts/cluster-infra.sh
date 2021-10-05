@@ -4,25 +4,22 @@ unset SSH_AUTH_SOCK
 export PDSH_RCMD_TYPE=ssh
 export PDSH_SSH_ARGS_APPEND='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 
-echo "Wait for cloud-init to finnish"
-cloud-init status --wait
+if which cloud-init >/dev/null 2>&1; then
+  echo "Wait for cloud-init to finnish"
+  cloud-init status --wait
+fi
 
 if ! [ -f /root/.ssh/id_rsa ]; then
-  #ssh-keygen -t rsa -b 4096 -N "" -f /root/.ssh/id_rsa
   echo "Please copy common ssh key to /root/.ssh/id_rsa"
+  #ssh-keygen -t rsa -b 4096 -N "" -f /root/.ssh/id_rsa
   exit 1
 fi
 ssh-copy-id -o StrictHostKeyChecking=no -i /root/.ssh/id_rsa root@localhost
 
-#echo "Waiting for all nodes to become up"
-#systemctl restart whatsup-pingd
-#time (while ! whatsup -t --up >/dev/null; do sleep 1; echo -n .; done)
-#whatsup
-
 echo "Wait for cloud-init to finnish on all nodes"
 while true; do
-  A="$(nodeattr -n "~(control||pdsh_all_skip)"|sort)"
-  B="$(pdsh -a -X control 'cloud-init status --wait'|awk -F: '/status: done/{print $1}'|sort)"
+  A="$(nodeattr -n "~(control||pdsh_all_skip)"|sort)" #"
+  B="$(pdsh -a -X control 'if which cloud-init >/dev/null 2>&1; then cloud-init status --wait; else echo status: done; fi'|awk -F: '/status: done/{print $1}'|sort)"
   C=`comm -23 <(echo "$A") <(echo "$B")`
   if [ "$A" == "$B" ]; then
     break
