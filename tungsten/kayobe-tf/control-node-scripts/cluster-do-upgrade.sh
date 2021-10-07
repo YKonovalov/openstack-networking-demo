@@ -43,6 +43,16 @@ S="
 09-overcloud-service-upgrade.sh
 "
 
+#
+# kayobe control host upgrade
+# kayobe seed host package update --packages "*"
+# kayobe seed host upgrade
+# kayobe overcloud host package update --packages "*"
+# kayobe overcloud host upgrade
+# kayobe overcloud service configuration save
+# kayobe overcloud service upgrade
+#
+
 unset SSH_AUTH_SOCK
 
 dolog(){
