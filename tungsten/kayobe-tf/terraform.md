@@ -21,11 +21,13 @@ tungstenfabric plus openstack installation demo
   - **terraform.tfvars** -- create file and set your username, password (use terraform.tfvars.example as example);
   - **demo.auto.tfvars** -- create file and set following vars (use demo.auto.tfvars.example as example):
     - __demo__ - unique vapp name
-    - __demospec__ coma separated string with attributes (no spaces and starting with coma). Example: ",os=wallaby,virt=kvm,iface=ens192,tf=R2011-latest"
+    - __demospec__ coma separated string with attributes (no spaces and starting with coma). Example: ",os=wallaby,virt=kvm,iface=ens192,tf=R2011-latest,cacheimages"
       - __os__ OpenStack version (ussuri,victoria, etc)
       - __virt__ virtualization type (kvm or qemu)
       - __iface__ name of the network interface to configure
+      - __tfcustom__ - if present, then custom docker registry will be used for TF containers as specified in build node attributes
       - __tf__ tungsten fabric container tag (latest will be used by default)
+      - __cacheimages__ - enable caching docker registry on control node
     - __login_name__ - user name to create in instances for your convinience
     - __public_keys__ - ssh public key to add (to both root and your user). Public key will be used to connect to the host, so you must have corresponding private key in your ssh-agent.
     - __head_count__ - default 1 (tested with 1 and 3)

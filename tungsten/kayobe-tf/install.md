@@ -42,10 +42,11 @@ For hosts with role control you can optionally specify demo specification attrib
   - __iface__ - name of the network interface to configure
   - __tfcustom__ - if present, then custom docker registry will be used for TF containers as specified in build node attributes
   - __tf__ - tungsten fabric container tag (latest will be used by default)
+  - __cacheimages__ - enable caching docker registry on control node
 
-Example for ussuri on centos8 with custom build TF: **os=ussuri,virt=kvm,iface=eth0,tfcustom,tf=dev**
+Example for ussuri on centos8 with custom build TF: **os=ussuri,virt=kvm,iface=eth0,tfcustom,tf=dev,cacheimages**
 
-Example for wallaby on ubuntu2004 with public build TF: **os=wallaby,virt=kvm,iface=ens192,tf=R2011-latest**
+Example for wallaby on ubuntu2004 with public build TF: **os=wallaby,virt=kvm,iface=ens192,tf=R2011-latest,cacheimages**
 
 
 ### install

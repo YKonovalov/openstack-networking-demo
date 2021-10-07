@@ -1,7 +1,7 @@
 # This is for custom build tf in different VCD where we have different build-server
 
 demo = "mydemo"
-demospec = ",os=wallaby,virt=kvm,iface=ens192,tfcustom,tf=dev"
+demospec = ",os=wallaby,virt=kvm,iface=ens192,tfcustom,tf=dev,cacheimages"
 
 login_name = "me"
 public_keys = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDhnCbtsX8dsmLp5i2G9lDAsKM+05SqIh/kcer0sbv7K me@example.com"
