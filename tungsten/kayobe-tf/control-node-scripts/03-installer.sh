@@ -24,13 +24,13 @@ case $ID in
     pdsh -a 'dnf -y swap centos-{linux,stream}-repos'
     pdsh -a 'dnf -y distro-sync'
 
-    dnf -y install git python3-virtualenv python3-devel libffi-devel gcc openssl-devel python3-libselinux time jq
+    dnf -y install git python3-virtualenv python3-devel libffi-devel gcc openssl-devel python3-libselinux python3-dnf time jq
     dnf -y install centos-release-openstack-ussuri
     dnf -y install python3-openstackclient python3-heatclient
     venv=virtualenv-3
 
     export PDSH_SSH_ARGS_APPEND='-o StrictHostKeyChecking=no'
-    pdsh -a 'dnf -y install lsof jq python3-virtualenv'
+    pdsh -a 'dnf -y install lsof jq python3-virtualenv python3-dnf'
     pdsh -a 'dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo'
     pdsh -a 'dnf -y install docker-ce python3-docker'
     ;;
@@ -52,12 +52,6 @@ mkdir -p $SRC ||:
 $venv "$KAYOBE_VENV_PATH"
 source "$KAYOBE_VENV_PATH/bin/activate"
  pip install -U pip
- pip install ~/src/kayobe
+ pip install "$KAYOBE_SOURCE_PATH"
 deactivate
 )
-
-echo "FIXME1: we need to have similar venvs paths as on target hosts for tungsten playbooks run"
-if ! [ -L /opt/kayobe/venvs ]; then
-  mkdir -p /opt/kayobe
-  ln -fs /root/venvs /opt/kayobe/venvs
-fi

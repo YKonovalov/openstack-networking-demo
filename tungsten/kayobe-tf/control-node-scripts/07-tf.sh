@@ -3,34 +3,8 @@ set -e
 
 . ~/kayobe.venv
 
-dockerFixLocalRegistry() {
-  rhost="$(nodeattr -n build|head -1)"
-  rport="$(nodeattr -v build0 docker_registry_listen_port)"
-cat > /tmp/daemon.json << EOF
-{
-    "insecure-registries": [
-        "$rhost:$rport"
-    ],
-    "live-restore": true,
-    "log-opts": {
-        "max-file": "5",
-        "max-size": "50m"
-    },
-    "mtu": 1500,
-    "storage-driver": "overlay2",
-    "storage-opts": []
-}
-EOF
-  pdcp -g head,compute /tmp/daemon.json /etc/docker/daemon.json
-  pdsh -g head,compute systemctl restart docker
-}
-
 chost="$(nodeattr -n control|head -1)"
 tfcustom="$(nodeattr -v $chost tfcustom && echo True || echo False)"
-if nodeattr -v $chost tfcustom; then
-  echo "FIXME4: We should switch to our own docker resistry in kolla as well. Then we can remove this hack."
-  dockerFixLocalRegistry
-fi
 
 source ~/kayobe.venv
   kayobe -vvv overcloud host command run --become --command "/opt/kayobe/venvs/kolla-ansible/bin/pip install docker-compose"

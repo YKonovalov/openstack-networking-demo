@@ -12,11 +12,12 @@ S="
 02-configure.sh
 03-installer.sh
 04-control-host-bootstrap.sh
-05-overcloud-host.sh
-06-tf.sh
-07-overcloud-service-deploy.sh
-08-resources-basic.sh
-09-resources-demo.sh
+05-seed-host-configure.sh
+06-overcloud-host.sh
+07-tf.sh
+08-overcloud-service-deploy.sh
+10-resources-basic.sh
+11-resources-demo.sh
 "
 
 unset SSH_AUTH_SOCK

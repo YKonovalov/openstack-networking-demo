@@ -3,7 +3,7 @@
 . ~/kayobe.env
 
 resolve_host() {
-  getent hosts $1|head -1|cut -d ' ' -f1
+  getent ahostsv4 $1|head -1|cut -d ' ' -f1
 }
 
 
@@ -13,6 +13,7 @@ tf="$(nodeattr -v $chost tf)"
 virt="$(nodeattr -v $chost virt)"
 iface="$(nodeattr -v $chost iface)"
 tfcustom="$(nodeattr -v $chost tfcustom && echo True || echo False)"
+cacheimages="$(nodeattr -v $chost cacheimages && echo True || echo False)"
 
 os="${os:-wallaby}"
 tf="${tf:-latest}"
@@ -22,7 +23,12 @@ iface="${iface:-eth0}"
 hhost="$(nodeattr -n head|head -1)"
 head_ip=$(resolve_host $hhost)
 
-tf_docker_registry=
+docker_registry=""
+if [ "$cacheimages" == "True" ]; then
+  docker_registry="$chost:4000"
+fi
+
+tf_docker_registry="$docker_registry"
 tf_namespace=
 if [ "$tfcustom" == "True" ]; then
   rhost="$(nodeattr -n build|head -1)"
@@ -32,7 +38,8 @@ else
   tf_namespace=tungstenfabric
 fi
 
-mkdir -p "$KAYOBE_CONFIG_PATH/inventory/group_vars/"{controllers,compute,overcloud} "$KAYOBE_CONFIG_PATH/kolla"
+
+mkdir -p "$KAYOBE_CONFIG_PATH/inventory/group_vars/"{seed,controllers,compute,overcloud} "$KAYOBE_CONFIG_PATH/kolla"
 
 cat > "$KAYOBE_CONFIG_PATH/inventory/groups" << EOF
 [seed]
@@ -48,6 +55,12 @@ seed
 controllers
 compute
 
+[docker-registry:children]
+seed
+
+[container-image-builders:children]
+seed
+
 [ntp:children]
 seed
 overcloud
@@ -61,18 +74,23 @@ EOF
 
 cat > "$KAYOBE_CONFIG_PATH/network-allocation.yml" << EOF
 common_ips:
-`nodeattr -n "head||compute"|while read name; do echo " $name: $(resolve_host $name)"; done`
+`nodeattr -n "control||head||compute"|while read name; do echo " $name: $(resolve_host $name)"; done`
 EOF
 
 cat > "$KAYOBE_CONFIG_PATH/inventory/hosts" << EOF
 localhost ansible_connection=local config_file=../tf.yml
+[seed]
+$chost ansible_connection=local
+EOF
+
+cat > "$KAYOBE_CONFIG_PATH/inventory/overcloud" << EOF
 [controllers]
 `nodeattr -n head   |awk '{print $0, "ansible_host="$0}'`
 [compute]
 `nodeattr -n compute|awk '{print $0, "ansible_host="$0}'`
 EOF
 
-cat > "$KAYOBE_CONFIG_PATH/inventory/group_vars/controllers/network-interfaces" << EOF
+tee "$KAYOBE_CONFIG_PATH/inventory/group_vars"/{seed,controllers}/network-interfaces << EOF
 common_interface: $iface
 common_bootproto: static
 EOF
@@ -81,27 +99,29 @@ common_interface: vhost0
 common_bootproto: static
 EOF
 
-cat > "$KAYOBE_CONFIG_PATH/inventory/group_vars/overcloud/ansible_python_interpreter" << EOF
+tee "$KAYOBE_CONFIG_PATH/inventory/group_vars"/{seed,overcloud}/ansible_python_interpreter << EOF
 ansible_python_interpreter: "{{ virtualenv_path }}/kayobe/bin/python"
 EOF
 
 cat >  "$KAYOBE_CONFIG_PATH/networks.yml" << EOF
-admin_oc_net_name: common
-oob_oc_net_name: common
-provision_oc_net: common
-oob_wl_net_name: common
-provision_wl_net_name: common
-cleaning_net_name: common
-internal_net_name: common
-public_net_name: common
-tunnel_net_name: common
-external_net_name: common
-storage_net_name: common
-storage_mgmt_net_name: common
-inspection_net_name: common
+admin_oc_net_name:                   common
+oob_oc_net_name:                     common
+oob_wl_net_name:                     common
+provision_oc_net_name:               common
+provision_wl_net_name:               common
+inspection_net_name:                 common
+cleaning_net_name:                   common
+external_net_names:                 [common]
+public_net_name:                     common
+internal_net_name:                   common
+tunnel_net_name:                     common
+storage_mgmt_net_name:               common
+storage_net_name:                    common
+swift_storage_net_name:              common
+swift_storage_replication_net_name:  common
 EOF
 
-cat >  "$KAYOBE_CONFIG_PATH/networks-vars.yml" << EOF
+cat >  "$KAYOBE_CONFIG_PATH/networks-common.yml" << EOF
 common_cidr: $(ip -j r s dev $iface scope link|jq -r '.[0]|.dst')
 common_gateway: $(ip -j r s dev $iface default|jq -r '.[0]|.gateway')
 common_fqdn: $head_ip
@@ -127,11 +147,29 @@ EOF
 
 cat > "$KAYOBE_CONFIG_PATH/hosts-vars.yml" << EOF
 disable-glean: true
-docker_storage_driver: overlay
 seed_lvm_groups: []
 controller_lvm_groups: []
 compute_lvm_groups: []
 EOF
+
+cat > "$KAYOBE_CONFIG_PATH/docker.yml" << EOF
+docker_storage_driver: overlay2
+docker_daemon_live_restore: true
+tf_docker_registry: "$tf_docker_registry"
+kolla_docker_custom_config: "{{ ({'insecure-registries':[tf_docker_registry]} if tf_docker_registry else {}) | combine({'registry-mirrors':docker_registry_mirrors} if docker_registry_mirrors else {}) }}"
+EOF
+
+if [ "$cacheimages" == "True" ]; then
+cat > "$KAYOBE_CONFIG_PATH/docker-registry.yml" << EOF
+docker_registry_enabled: true
+docker_registry_port: 4000
+docker_registry_datadir_volume: "/opt/registry"
+docker_registry_env:
+  REGISTRY_PROXY_REMOTEURL: "https://registry-1.docker.io"
+docker_registry_mirrors:
+  - "http://$docker_registry/"
+EOF
+fi
 
 cat > "$KAYOBE_CONFIG_PATH/kolla.yml" << EOF
 bootstrap_user: "root"
@@ -154,7 +192,7 @@ EOF
 cat > "$KAYOBE_CONFIG_PATH/kolla/globals.yml" << EOF
 tf_tag: "$tf"
 tf_namespace: "$tf_namespace"
-tf_docker_registry: "$tf_docker_registry"
+tf_docker_registry: "{{ tf_docker_registry }}"
 
 contrail_ca_file: /etc/contrail/ssl/certs/ca-cert.pem
 contrail_dm_integration: False

@@ -37,9 +37,10 @@ S="
 02-configure.sh
 03-installer.sh
 04-control-host-bootstrap.sh
-05-overcloud-host.sh
-06-tf.sh
-07-overcloud-service-upgrade.sh
+05-seed-host-configure.sh
+06-overcloud-host.sh
+07-tf.sh
+09-overcloud-service-upgrade.sh
 "
 
 unset SSH_AUTH_SOCK
